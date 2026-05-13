@@ -1,0 +1,29 @@
+{
+    "user_defined_docker_images":{
+        "image1dockerfile":"/home/user/work/django/"
+    },
+    "docker_images_to_pull":{
+        "image1":"dockerhub:postgres:17"
+    },
+    "docker_images_to_run":{
+        "redis":"",
+    },
+    "lambda_funcs_to_deploy":{
+        "func1":{
+            "func_name":"ads",
+            "func_code_path":"/home/usr/igga",
+            "func_handler_file_name":"function.py",
+            "lambda_handler_function_name":"lambda_handler",
+            "lambda_language":"python",
+            "override_base_image_for_lambda":"docker pull amazon/aws-lambda-python:latest-x86_64"
+        }
+    },
+    "docker_bridge_network_exclude_ips":[
+        "127.0.0.1:5432",
+        "www.google.com",
+        "www.openai.*",
+    ],
+    "docker_bridge_network_include_ips":[
+    "127.0.0.1:6789"
+    ],
+}
