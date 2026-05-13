@@ -29,7 +29,16 @@ class ControlPlaneDB(metaclass=SingletonMeta):
     def remove_lambda_deployed_instances(self):
         pass
 
-    def get_lambda_deployed_instances(self):
+    def get_lambda_deployed_instances(self, lambda_func_name):
+        pass
+    
+    def get_available_lambda_instance(self, lambda_func_name):
+        pass
+    
+    def create_lambda_request(self, lambda_func_name, request):
+        pass
+
+    def update_lambda_request(self, lambda_func_name, updates):
         pass
 
     def get_lambda_last_request_time(self):

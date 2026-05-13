@@ -15,7 +15,9 @@
             "func_handler_file_name":"function.py",
             "lambda_handler_function_name":"lambda_handler",
             "lambda_language":"python",
-            "override_base_image_for_lambda":"docker pull amazon/aws-lambda-python:latest-x86_64"
+            "override_base_image_for_lambda":"docker pull amazon/aws-lambda-python:latest-x86_64",
+            "function_arn":"", # optional, if being used by client backend
+            
         }
     },
     "docker_bridge_network_exclude_ips":[
