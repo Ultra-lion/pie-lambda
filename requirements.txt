@@ -1,3 +1,5 @@
 docker
 dnslib
 fastapi[standard]
+aiosqlite
+cryptography

@@ -3,8 +3,17 @@ from fastapi import FastAPI, Request, BackgroundTasks
 from urllib.parse import urlparse, unquote
 from control_plane.control_plane_db import ControlPlaneDB
 import asyncio
+from contextlib import asynccontextmanager
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Initialize the DB
+    db = ControlPlaneDB()
+    await db.get_conn() 
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 control_plane_db = ControlPlaneDB()
 
@@ -85,5 +94,4 @@ async def proxy_request(request: Request, path: str):
         BackgroundTasks.add_task(proxy_api_call, request, lambda_func_name, proxy_url, "Event")
     else:
         await proxy_api_call(request, lambda_func_name, proxy_url, "RequestResponse")
-    
     

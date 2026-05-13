@@ -1,4 +1,4 @@
-import threading
+import aiosqlite
 
 
 class SingletonMeta(type):
@@ -10,10 +10,20 @@ class SingletonMeta(type):
 
 class ControlPlaneDB(metaclass=SingletonMeta):
     def __init__(self):
-        self.db = "sqlite_connection"
+        self.db = "pie_lambda.db"
+        self.db_connection = None
+
+    async def get_conn(self):
+
+        if self.db_connection is None:
+            self.db_connection = await aiosqlite.connect(self.db)
+            self.db_connection.row_factory = aiosqlite.Row
+            await self.db_connection.execute("PRAGMA journal_mode=WAL;")
+            
+        return self.db_connection
     
 
-    def build_db_tables(self):
+    async def build_db_tables(self):
         pass
     
 
