@@ -222,3 +222,5 @@ certs/*
 config.json
 
 current_project_progress.md
+
+.build/*

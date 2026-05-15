@@ -1,13 +1,4 @@
 {
-    "user_defined_docker_images":{
-        "image1dockerfile":"/home/user/work/django/"
-    },
-    "docker_images_to_pull":{
-        "image1":"dockerhub:postgres:17"
-    },
-    "docker_images_to_run":{
-        "redis":"",
-    },
     "lambda_funcs_to_deploy":{
         "func1":{
             "func_name":"ads",
@@ -19,13 +10,5 @@
             "function_arn":"", # optional, if being used by client backend
             
         }
-    },
-    "docker_bridge_network_exclude_ips":[
-        "127.0.0.1:5432",
-        "www.google.com",
-        "www.openai.*",
-    ],
-    "docker_bridge_network_include_ips":[
-    "127.0.0.1:6789"
-    ],
+    }
 }

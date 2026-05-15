@@ -5,3 +5,4 @@ httpx
 pydantic
 sqlalchemy
 aiosqlite
+docker

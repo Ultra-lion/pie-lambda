@@ -1,4 +1,5 @@
 
+from websockets import client
 import argparse
 from docker_builder.build_images import build, deploy, shutdown, teardown, run_existing
 import argparse 
@@ -9,7 +10,7 @@ from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from datetime import datetime, timedelta
-
+import docker
 
 from control_plane.control_plane_db import ControlPlaneDB
 
@@ -88,6 +89,16 @@ def generate_certs():
         generate_master_ca()
         generate_aws_impersonator_cert()
 
+def check_if_docker_running():
+    try:
+        client = docker.from_env()
+        if client.ping():
+            print("Docker Engine Running")
+    except docker.errors.APIError as e1:
+        raise Exception("Docker Engine Not Running")
+    except Exception as e2:
+        raise e2
+
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description="Pie Lambda Local AWS Toolkit")
     
@@ -98,8 +109,8 @@ if __name__=="__main__":
     
     parser.add_argument("--command", 
                         dest="command", 
-                        choices=["buildNdeploy", "teardown", "shutdown", "RunExisting"],
-                        default="buildNdeploy",
+                        choices=["build", "deploy", "teardown", "shutdown", "RunExisting"],
+                        default="build",
                         help="Action to perform")
     args = parser.parse_args()
     # Accessing the values
@@ -121,9 +132,17 @@ if __name__=="__main__":
     
     control_plane_db = ControlPlaneDB()
 
+    check_if_docker_running()
+
     generate_certs()
     
+    client = docker.from_env()
 
+    for img in client.images.list():
+        print(img.tags)
+        print(img.id)
+
+    # exit(1)
     match command:
         case "build":
             build(config)

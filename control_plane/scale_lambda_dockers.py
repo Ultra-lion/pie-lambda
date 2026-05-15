@@ -18,4 +18,6 @@ class LambdaScaler:
             image= self.get_lambda_image_name(lambda_func_name),
             name= self.get_existing_lambda_containers(lambda_func_name),
             detach=True,
+            network="lambda_bridge",
+            dns=["pie-lambda-control-plane"]
         )

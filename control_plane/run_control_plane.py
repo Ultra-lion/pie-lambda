@@ -7,8 +7,8 @@ import sys
 # Ensure the root directory is in the path for internal imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from control_plane.internal_dns import run_server as run_dns_server
-from control_plane.load_balance_lambdas import app
+from internal_dns import run_server as run_dns_server
+from load_balance_lambdas import app
 
 def start_load_balancer(config):
     print("🔒 Starting HTTPS Control Plane (Load Balancer) on port 443...")

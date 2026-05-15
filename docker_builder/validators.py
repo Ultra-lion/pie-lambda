@@ -8,5 +8,4 @@ class LambdaImageConfig(BaseModel):
     func_handler_file_name:str
     lambda_handler_function_name:str
     lambda_language:str
-    override_base_image_for_lambda:str
     

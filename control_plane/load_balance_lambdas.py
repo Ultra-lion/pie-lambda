@@ -1,7 +1,7 @@
 import httpx
 from fastapi import FastAPI, Request, BackgroundTasks
 from urllib.parse import urlparse, unquote
-from control_plane.control_plane_db import ControlPlaneDB
+from control_plane_db import ControlPlaneDB
 import asyncio
 from contextlib import asynccontextmanager
 
