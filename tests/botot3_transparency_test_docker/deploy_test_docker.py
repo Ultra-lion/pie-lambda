@@ -46,7 +46,8 @@ def build_and_run_test(build_image):
                 "AWS_CA_BUNDLE": "/etc/ssl/certs/ca.crt"
             },
             volumes={
-                CA_PATH: {'bind': '/etc/ssl/certs/ca.crt', 'mode': 'ro'}
+                CA_PATH: {'bind': '/etc/ssl/certs/ca.crt', 'mode': 'ro'},
+                BASE_DIR: {'bind': '/app', 'mode': 'rw'}
             },
             dns=["172.18.0.2"],
             detach=True,
