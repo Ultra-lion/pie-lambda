@@ -1,5 +1,5 @@
 import aiosqlite
-
+from contextlib import asynccontextmanager
 
 class SingletonMeta(type):
     _instances = {}
@@ -11,21 +11,59 @@ class SingletonMeta(type):
 class ControlPlaneDB(metaclass=SingletonMeta):
     def __init__(self):
         self.db = "pie_lambda.db"
-        self.db_connection = None
 
-    async def get_conn(self):
 
-        if self.db_connection is None:
-            self.db_connection = await aiosqlite.connect(self.db)
-            self.db_connection.row_factory = aiosqlite.Row
-            await self.db_connection.execute("PRAGMA journal_mode=WAL;")
+    @asynccontextmanager
+    async def db_connection(self):
+        async with aiosqlite.connect(self.db) as db:
+            db.row_factory = aiosqlite.Row
+            await db.execute("PRAGMA journal_mode=WAL;")
+            await db.execute("PRAGMA busy_timeout=10000;")
+            yield db
             
-        return self.db_connection
+
+    async def initialize_db(self):
+        async with self.db_connection() as db:
+            await db.execute("""
+            CREATE TABLE IF NOT EXISTS containers (
+                container_id TEXT PRIMARY KEY,
+                lambda_name TEXT NOT NULL,
+                ip_address TEXT NOT NULL,
+                port INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                
+            """)
+
+            await db.execute("""
+            CREATE TABLE IF NOT EXISTS requests (
+                request_id TEXT PRIMARY KEY,
+                lambda_name TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                priority INTEGER NOT NULL,
+                request_data TEXT NOT NULL,
+                response_data TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            )
+            """)
+
+            await db.execute("""
+            CREATE TABLE IF NOT EXISTS scaling_queue (
+                request_id TEXT PRIMARY KEY,
+                lambda_name TEXT NOT NULL,
+                priority INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            )                
+            """)
+
+            await db.commit()
     
 
-    async def build_db_tables(self):
-        pass
-    
 
     def add_lambda_built_docker_images(self, lambda_list):
         pass    
@@ -42,13 +80,23 @@ class ControlPlaneDB(metaclass=SingletonMeta):
     def get_lambda_deployed_instances(self, lambda_func_name):
         pass
     
+
+    def create_scaleup_request(self, request_id, lambda_func_name):
+        pass
+    
     def get_available_lambda_instance(self, lambda_func_name):
         pass
     
-    def create_lambda_request(self, lambda_func_name, request):
+    def mark_instance_as_busy(self, instance_id):
         pass
 
-    def update_lambda_request(self, lambda_func_name, updates):
+    def mark_instance_as_available(self, instance_id):
+        pass
+    
+    def create_lambda_request(self, request_id, lambda_func_name, request):
+        pass
+
+    def update_lambda_request(self, request_id, lambda_func_name, updates):
         pass
 
     def get_lambda_last_request_time(self):

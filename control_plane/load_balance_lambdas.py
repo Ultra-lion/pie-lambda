@@ -3,29 +3,15 @@ from fastapi import FastAPI, Request, BackgroundTasks
 from urllib.parse import urlparse, unquote
 from control_plane_db import ControlPlaneDB
 import asyncio
-from contextlib import asynccontextmanager
 import uvicorn
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup: Initialize the DB
-    db = ControlPlaneDB()
-    await db.get_conn() 
-    yield
+import uuid
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI()
 
 control_plane_db = ControlPlaneDB()
 
-async def get_next_server(lambda_func_name: str):
-    lambda_server_ip = None
-    while not lambda_server_ip:
-        lambda_server_ip = control_plane_db.get_available_lambda_instance(lambda_func_name)
-        if not lambda_server_ip:
-            await asyncio.sleep(1)
-    
-    return lambda_server_ip
+waiting_room = {}
     
 
 def extract_lambda_name(path: str):
@@ -50,32 +36,37 @@ def extract_lambda_name(path: str):
     return clean_name
 
 
-async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = None, proxy_url: str = None, type:str = "RequestResponse"):
-    control_plane_db.create_lambda_request(lambda_func_name, request)
+async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = None, type:str = "RequestResponse"):
+    request_id = str(uuid.uuid4())
+    control_plane_db.create_lambda_request(request_id, lambda_func_name, request)
     if type == "RequestResponse":
-        async with httpx.AsyncClient() as client:
-            response = await client.request(
-                method=request.method,
-                url=proxy_url,
-                headers=request.headers,
-            params=request.query_params,
-            content=await request.body(),
-        )
-        control_plane_db.update_lambda_request(lambda_func_name, {"status": "success", "response": response.content})
-        return response.content
-    
+        try:
+            instance = control_plane_db.get_available_lambda_instance(lambda_func_name)
+            if not instance:
+                waiting_room[request_id] = asyncio.Event()
+                control_plane_db.create_scaleup_request(request_id, lambda_func_name)
+                try:
+                    await asyncio.wait_for(waiting_room[request_id].wait(), timeout=30)
+                except asyncio.TimeoutError:
+                    control_plane_db.update_lambda_request(lambda_func_name, {"status": "timeout", "response": "Lambda is busy"})
+                    return "Lambda is busy"
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.request(
+                    method=request.method,
+                    url=f"http://{instance.ip_address}:{instance.port}",
+                    headers=request.headers,
+                    params=request.query_params,
+                    content=await request.body(),
+                )
+            control_plane_db.update_lambda_request(lambda_func_name, {"status": "success", "response": response.content})
+            return response.content
+        finally:
+            control_plane_db.mark_instance_as_available(instance.instance_id)
+            waiting_room.pop(request_id, None)
+
     elif type == "Event":
-        async with httpx.AsyncClient() as client:
-            response = await client.request(
-                method=request.method,
-                url=proxy_url,
-                headers=request.headers,
-                params=request.query_params,
-                content=await request.body(),
-            )
-        control_plane_db.update_lambda_request(lambda_func_name, {"status": "success", "response": response.content})
-        return True
-    
+        return 202
     else:
         raise ValueError("Invalid type")
 
@@ -87,18 +78,11 @@ async def proxy_request(request: Request, path: str):
     print("lambda_func_name", lambda_func_name)
     if not lambda_func_name:
         print("Nibba Money Hayee")
-        return "Nibba Money Hayee"
-    lambda_server_ip = await get_next_server(lambda_func_name)
-
-    proxy_url = f"http://{lambda_server_ip}:8000/{path}"
 
     lowercase_headers = {k.lower(): v for k, v in request.headers.items()}
     invocation_type = lowercase_headers.get('x-amz-invocation-type')
 
-    if invocation_type == "Event":
-        BackgroundTasks.add_task(proxy_api_call, request, lambda_func_name, proxy_url, "Event")
-    else:
-        await proxy_api_call(request, lambda_func_name, proxy_url, "RequestResponse")
+    return await proxy_api_call(request, lambda_func_name, invocation_type)
     
 if __name__=="__main__":
     uvicorn.run(

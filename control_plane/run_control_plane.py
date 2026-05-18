@@ -3,6 +3,9 @@ import uvicorn
 import json
 import os
 import sys
+import asyncio
+
+from control_plane_db import ControlPlaneDB
 
 # Ensure the root directory is in the path for internal imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -38,6 +41,9 @@ if __name__ == "__main__":
     # We need the control plane IP for DNS resolution
     if 'control_plane_ip' not in config:
         config['control_plane_ip'] = os.getenv("CONTROL_PLANE_IP", "127.0.0.1")
+
+    db_manager = ControlPlaneDB()
+    asyncio.run(db_manager.initialize_db())
 
     # Kick off both services
     processes = [
