@@ -1,6 +1,8 @@
 # Use the specific version requested
 FROM python:3.11.4-slim
 
+USER root
+
 # Prevent Python from writing .pyc files and enable unbuffered logging
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
