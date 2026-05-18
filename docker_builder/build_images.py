@@ -122,11 +122,16 @@ def deploy_control_plane_docker(config:dict):
         host_socket:{
             'bind':'/var/run/docker.sock',
             'mode':'rw'
+        },
+        "/home/rohan/Desktop/FUN-Projects/pie-lambda/control_plane":{
+            'bind':'/app/control_plane',
+            'mode':'rw'
         }
     }
     
     client.containers.run(
         image=control_plane_docker_image,
+        command="tail -f /dev/null",
         name="pie-lambda-control-plane",
         network=BASE_NETWORK_BRIDGE,
         volumes=volumes,
@@ -138,7 +143,7 @@ def deploy_control_plane_docker(config:dict):
 def build(config:dict):
     setup_docker_network_bridge()
     build_control_plane_docker()
-    # build_lambda_functions(config)
+    build_lambda_functions(config)
     
 def deploy(config:dict):
     deploy_control_plane_docker(config)

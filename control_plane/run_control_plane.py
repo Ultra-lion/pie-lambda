@@ -17,8 +17,8 @@ def start_load_balancer(config):
         app, 
         host="0.0.0.0", 
         port=443, 
-        ssl_keyfile="/app/certs/server.key", 
-        ssl_certfile="/app/certs/server.crt"
+        ssl_keyfile="/app/control_plane/certs/server.key", 
+        ssl_certfile="/app/control_plane/certs/server.crt"
     )
 
 def start_dns_interceptor(config):

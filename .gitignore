@@ -218,9 +218,12 @@ __marimo__/
 .streamlit/secrets.toml
 
 certs/*
+*/certs/*
 .vscode/*
 config.json
 
 current_project_progress.md
 
 .build/*
+
+*.db*
