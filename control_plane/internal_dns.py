@@ -4,7 +4,7 @@ import re
 import socket 
 import struct
 
-intercepted_domain = '.*lambda.*\.amazonaws\.com'
+intercepted_domain = '.*lambda.*\.amazonaws\.com.*'
 
 
 
@@ -38,7 +38,7 @@ class HybridResolver(BaseResolver):
     
     def forward_query(self, request, upstream_ip):
         try:
-            reply_data = request.send(address=upstream_ip, port=53, timeout=2)
+            reply_data = request.send(upstream_ip, port=53, timeout=2)
             return DNSRecord.parse(reply_data)
         except Exception as e:
             print(f"Error forwarding query to {upstream_ip}: {e}")
@@ -46,7 +46,7 @@ class HybridResolver(BaseResolver):
 
 
     def resolve(self, request, handler):
-        qname = str(request.q.qname).rstrip('.')
+        qname = str(request.q.qname)
         qtype = QTYPE[request.q.qtype]
         
         print("in hea resolv")
@@ -57,15 +57,20 @@ class HybridResolver(BaseResolver):
             qname not in self.user_config.get('docker_bridge_network_exclude_ips',[])
             or qname in self.user_config.get('docker_bridge_network_include_ips',[])
             or self.is_intercepted_domain(qname)
-            ) and qtype=='A'
+            )
             ):
             reply = request.reply()
-            if qtype == 'A' and self.is_intercepted_domain(qname):
-                reply.add_answer(RR(qname, QTYPE.A, rdata=A(self.control_plane_ip)))
-                return reply
+            if qtype == 'A':
+                if self.is_intercepted_domain(qname):
+                    print(f"!!! INTERCEPTING A: {qname}")
+                    reply.add_answer(RR(qname, QTYPE.A, rdata=A(self.control_plane_ip)))
+                    return reply
+                else:
+                    reply.add_answer(RR(qname, QTYPE.A, rdata=A(self.docker_dns)))
+                    return reply
             else:
-                reply.add_answer(RR(qname, QTYPE.A, rdata=A(self.docker_dns)))
-                return reply
+                print(f"!!! INTERCEPTING {qtype} (returning empty): {qname}")
+                return reply 
 
         if qname.count('.')<=1 or '.internal' in qname or '.local' in qname:
             reply = self.forward_query(request,self.docker_dns)
@@ -93,7 +98,7 @@ def run_server(config:dict):
 
 if __name__=="__main__":
     run_server({
-        "control_plane_ip": "172.19.0.2"
+        "control_plane_ip": "172.18.0.2"
     })
 
     print("oooga")

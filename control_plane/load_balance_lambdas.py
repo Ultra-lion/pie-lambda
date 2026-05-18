@@ -102,5 +102,6 @@ if __name__=="__main__":
         host="0.0.0.0", 
         port=443,
         ssl_keyfile="/app/control_plane/certs/server.key", 
-        ssl_certfile="/app/control_plane/certs/server.crt"
+        ssl_certfile="/app/control_plane/certs/server.crt",
+        log_level="DEBUG"
     )

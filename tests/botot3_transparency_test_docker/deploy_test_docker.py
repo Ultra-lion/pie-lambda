@@ -1,5 +1,6 @@
 import docker
 import os
+import argparse 
 
 client = docker.from_env()
 
@@ -17,11 +18,17 @@ def cleanup_preexisting_containers(image_tag):
 
 
 
-def build_and_run_test():
+def build_and_run_test(build_image):
     image_tag = "pie-lambda-boto3-test"
     cleanup_preexisting_containers(image_tag)
     try:
-        client.images.get(image_tag)
+        if build_image:
+            existing_image = client.images.get(image_tag)
+            if existing_image:
+                existing_image.remove()
+            client.images.build(path=BASE_DIR, tag=image_tag)
+        else:
+            client.images.get(image_tag)
     except docker.errors.ImageNotFound:
         print(f"Image {image_tag} not found, building...")
         client.images.build(path=BASE_DIR, tag=image_tag)
@@ -41,11 +48,19 @@ def build_and_run_test():
             volumes={
                 CA_PATH: {'bind': '/etc/ssl/certs/ca.crt', 'mode': 'ro'}
             },
-            dns=["172.19.0.3"],
+            dns=["172.18.0.2"],
             detach=True,
         )
     except Exception as e:
         print(f"Error during deployment: {e}")
 
 if __name__ == "__main__":
-    build_and_run_test()
+    parser = argparse.ArgumentParser(description="Pie Lambda Local AWS Test")
+    
+    parser.add_argument("--build_image", 
+                        dest="build_image", 
+                        default=True, 
+                        help="Build the image")
+    args = parser.parse_args()
+    
+    build_and_run_test(args.build_image)
