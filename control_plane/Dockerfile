@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy the entire project context
 # This ensures that internal imports like 'from control_plane.control_plane_db import ...' work correctly
-COPY . /app/
+COPY . /app/control_plane/
 
 
 RUN pip install --no-cache-dir -r requirements.txt

@@ -4,6 +4,7 @@ from urllib.parse import urlparse, unquote
 from control_plane_db import ControlPlaneDB
 import asyncio
 from contextlib import asynccontextmanager
+import uvicorn
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -95,3 +96,11 @@ async def proxy_request(request: Request, path: str):
     else:
         await proxy_api_call(request, lambda_func_name, proxy_url, "RequestResponse")
     
+if __name__=="__main__":
+    uvicorn.run(
+        app, 
+        host="0.0.0.0", 
+        port=443,
+        ssl_keyfile="/app/control_plane/certs/server.key", 
+        ssl_certfile="/app/control_plane/certs/server.crt"
+    )
