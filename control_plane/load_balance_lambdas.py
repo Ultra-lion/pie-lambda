@@ -36,7 +36,7 @@ def extract_lambda_name(path: str):
     segments = path.strip('/').split('/')
 
     if len(segments) < 3 or segments[1] !='functions':
-        raise ValueError("Non lambda Path sent to lambda load balancer")
+        return None
     
     raw_identifier = segments[2]
 
@@ -84,6 +84,10 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
 async def proxy_request(request: Request, path: str):
     lambda_func_name = extract_lambda_name(path)
+    print("lambda_func_name", lambda_func_name)
+    if not lambda_func_name:
+        print("Nibba Money Hayee")
+        return "Nibba Money Hayee"
     lambda_server_ip = await get_next_server(lambda_func_name)
 
     proxy_url = f"http://{lambda_server_ip}:8000/{path}"
