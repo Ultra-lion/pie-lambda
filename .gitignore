@@ -227,3 +227,4 @@ current_project_progress.md
 .build/*
 
 *.db*
+imp_convos/*

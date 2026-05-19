@@ -70,14 +70,15 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
     else:
         raise ValueError("Invalid type")
 
-
+async def get_lambda_images():
+    return []
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
 async def proxy_request(request: Request, path: str):
     lambda_func_name = extract_lambda_name(path)
     print("lambda_func_name", lambda_func_name)
     if not lambda_func_name:
-        print("Nibba Money Hayee")
+       return await get_lambda_images()
 
     lowercase_headers = {k.lower(): v for k, v in request.headers.items()}
     invocation_type = lowercase_headers.get('x-amz-invocation-type')
