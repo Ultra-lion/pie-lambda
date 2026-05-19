@@ -60,6 +60,7 @@ class LambdaScaler:
         await asyncio.gather(*reaper_thread_tasks)
         await self.control_plane_db.remove_destroyed_containers([container.container_id for container in containers_to_destroy])# this will delete the rows for these containers
 
+
        
     async def main_process(self):
         
