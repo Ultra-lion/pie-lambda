@@ -1,10 +1,11 @@
 
+import asyncio
 import docker
 import asyncio
-import threading
-import time
+import os
 
 from control_plane_db import ControlPlaneDB
+
 
 
 class LambdaScaler:
@@ -12,6 +13,7 @@ class LambdaScaler:
         self.docker_client = docker.from_env()
         self.individual_lambda_scale_limit = individual_lambda_scale_limit
         self.control_plane_db = ControlPlaneDB()
+        self.IPC_event = asyncio.Event()
         
     def get_lambda_image_name(self, lambda_func_name):
         pass
@@ -60,13 +62,33 @@ class LambdaScaler:
         await asyncio.gather(*reaper_thread_tasks)
         await self.control_plane_db.remove_destroyed_containers([container.container_id for container in containers_to_destroy])# this will delete the rows for these containers
 
+    async def ipc_server(self):
+        socket_path = "/tmp/scaler.sock"
+        if os.path.exists(socket_path):
+            os.remove(socket_path)
+        async def handle_poke(reader, writer):
+            self.IPC_event.set()
+            writer.write(b"OK")
+            await writer.drain()
+            writer.close()
+            await writer.wait_closed()
 
+        server = await asyncio.start_unix_server(handle_poke, socket_path)
+        async with server:
+            await server.serve_forever()
        
-    async def main_process(self):
+    async def scaler_main_process(self):
         
         while True:
             try:
-                await asyncio.gather(self.scaler_thread_loop(), self.reaper_thread_loop())
+                try:
+                    await asyncio.wait_for(self.IPC_event.wait(), timeout=1)
+                    self.IPC_event.clear()
+                except asyncio.TimeoutError:
+                    pass
+
+                await self.scaler_thread_loop(), 
+                await self.reaper_thread_loop()
             except Exception as e:
                 print(f"Error in main process: {e}")
             await asyncio.sleep(1)

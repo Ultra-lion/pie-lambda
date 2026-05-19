@@ -36,6 +36,16 @@ def extract_lambda_name(path: str):
     return clean_name
 
 
+async def poke_scaler():
+    try:
+        reader, writer = await asyncio.open_unix_connection("/tmp/scaler.sock")
+        writer.write("scale".encode())
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+    except Exception as e:
+        print(e)
+
 async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = None, type:str = "RequestResponse"):
     request_id = str(uuid.uuid4())
     control_plane_db.create_lambda_request(request_id, lambda_func_name, request)
