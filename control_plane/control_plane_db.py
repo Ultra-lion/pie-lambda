@@ -44,6 +44,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                 container_id TEXT PRIMARY KEY,
                 lambda_name TEXT NOT NULL,
                 ip_address TEXT NOT NULL,
+                reserved_for_request TEXT,
                 port INTEGER NOT NULL,
                 status TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -86,10 +87,13 @@ class ControlPlaneDB(metaclass=SingletonMeta):
             return db.fetchone()[0]
     
 
-    async def add_lambda_deployed_instances(self, lambda_name, container_id, ip_address, port):
+    async def add_lambda_deployed_instances(self, lambda_name, container_id, ip_address, port, reserved_for_request=None):
         status="available"
+        if reserved_for_request:
+            status="reserved"
+
         async with self.db_connection() as db:
-            await db.execute("INSERT INTO containers (lambda_name, container_id, ip_address, port, status) VALUES (?, ?, ?, ?, ?)", (lambda_name, container_id, ip_address, port, status)) 
+            await db.execute("INSERT INTO containers (lambda_name, container_id, ip_address, port, status, reserved_for_request) VALUES (?, ?, ?, ?, ?, ?)", (lambda_name, container_id, ip_address, port, status, reserved_for_request)) 
             await db.commit()
 
     async def remove_lambda_deployed_instances(self, container_ids):
