@@ -5,14 +5,52 @@ from control_plane_db import ControlPlaneDB
 import asyncio
 import uvicorn
 import uuid
-
-
-app = FastAPI()
+import os
+import json
 
 control_plane_db = ControlPlaneDB()
 
 waiting_room = {}
     
+
+
+app = FastAPI()
+
+
+async def ipc_server():
+    socket_path = "/tmp/lb.sock"
+    if os.path.exists(socket_path):
+        os.remove(socket_path)
+    
+    async def handle_poke_back(reader, writer):
+        try:
+            data = await reader.readuntil(b"\n")
+            request_data = json.loads(data.decode())
+            if request_data.get("type")=="ready":
+                ready_ids = request_data.get("ready_ids")
+                for ready_id in ready_ids:
+                    if ready_id in waiting_room:
+                        waiting_room[ready_id].set()
+                        
+
+        except Exception as e:
+            print(e)
+        finally:
+            await writer.drain()
+            writer.close()
+            await writer.wait_closed()
+
+
+    server = await asyncio.start_unix_server(
+        handle_poke_back,
+        socket_path,
+    )
+    
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(ipc_server())
+
+
 
 def extract_lambda_name(path: str):
     parsed_url = urlparse(path)

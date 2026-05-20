@@ -4,6 +4,7 @@ import docker
 import asyncio
 import os
 import json 
+import datetime
 
 from control_plane_db import ControlPlaneDB
 
@@ -18,6 +19,7 @@ class LambdaScaler:
         self.sync_requests_queue = asyncio.Queue()
         self.poke_back_queue = asyncio.Queue()
         self.loop = None
+        self.docker_sdk_check_time = None
         
     def get_lambda_image_name(self, lambda_func_name):
         pass
@@ -39,9 +41,15 @@ class LambdaScaler:
             self.loop.call_soon_threadsafe(self.poke_back_queue.put_nowait, request_id_to_reserve_for)
 
     def scale_down_lambda(self, lambda_func_name, container_id):
-        self.docker_client.containers.get(container_id).stop()
-        self.docker_client.containers.get(container_id).remove()
-    
+        try:
+            self.docker_client.containers.get(container_id).stop()
+        except:
+            pass
+        try:
+            self.docker_client.containers.get(container_id).remove()
+        except:
+            pass
+        
     def provision_container(self, lambda_func_name, request_id_to_reserve_for=None):        
         self.scale_up_lambda(lambda_func_name, request_id_to_reserve_for)
     
@@ -69,7 +77,21 @@ class LambdaScaler:
             ready_ids.append(self.poke_back_queue.get_nowait())
         if ready_ids:
             await self.poke_lb(ready_ids)
+    
+    def get_docker_containers(self):
+        return self.docker_client.containers.list()
 
+    async def check_docker_container_sdk(self):
+        if self.docker_sdk_check_time is None or self.docker_sdk_check_time < datetime.now() - timedelta(seconds=30):
+            living_dockers = await asyncio.to_thread(self.get_docker_containers)
+            self.docker_sdk_check_time = datetime.now()
+            container_ids_to_not_delete=[]
+            for container in living_dockers:
+                container_ids_to_not_delete.append(container.id)
+            all_db_container_ids = await self.control_plane_db.get_all_containers()
+            container_ids_to_delete = [container_id for container_id in all_db_container_ids if container_id not in container_ids_to_not_delete]
+            if container_ids_to_delete:
+                await self.control_plane_db.remove_destroyed_containers(container_ids_to_delete)   
 
     async def reaper_thread_loop(self):
         containers_to_destroy = await self.control_plane_db.get_containers_to_destroy()# this will mark these containers unavailable
@@ -125,9 +147,13 @@ class LambdaScaler:
                     pass
 
                 await self.scaler_thread_loop(), 
-                await self.reaper_thread_loop()
+                await asyncio.gather(self.reaper_thread_loop(), self.check_docker_container_sdk())
             except Exception as e:
                 print(f"Error in main process: {e}")
+    
+async def main():
+    lambda_scaler = LambdaScaler()
+    await asyncio.gather(lambda_scaler.scaler_main_process(), lambda_scaler.ipc_server())
             
                 
             
@@ -135,5 +161,4 @@ class LambdaScaler:
 
 
 if __name__ == "__main__":
-    lambda_scaler = LambdaScaler()
-    asyncio.run(lambda_scaler.scaler_main_process())
+    asyncio.run(main())

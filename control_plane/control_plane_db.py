@@ -130,15 +130,24 @@ class ControlPlaneDB(metaclass=SingletonMeta):
             (
             SELECT container_id FROM containers 
             WHERE 
-                (status = 'available' AND last_used_at < datetime('now', '-5 minutes'))
+                (status = 'available' AND COALESCE(last_used_at, created_at) < datetime('now', '-5 minutes'))
             OR 
-                (status = 'busy' AND last_used_at < datetime('now', '-30 minutes'))
+                (status = 'busy' AND COALESCE(last_used_at, created_at) < datetime('now', '-30 minutes'))
+            OR 
+                (status = 'reserved' AND COALESCE(last_used_at, created_at) < datetime('now', '-1 minutes'))
             )
             RETURNING *;
             """)
             rows = await res.fetchall()
             await db.commit()
             return rows
+            
+    async def remove_destroyed_containers(self, container_ids):
+        if not container_ids:
+            return
+        async with self.db_connection() as db:
+            await db.execute(f"DELETE FROM containers WHERE container_id IN ({','.join(container_ids)})") 
+            await db.commit()
 
 
     
