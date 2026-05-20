@@ -224,7 +224,10 @@ config.json
 
 current_project_progress.md
 
+.agents/*
+
 .build/*
 
 *.db*
 imp_convos/*
+top_priorities.md

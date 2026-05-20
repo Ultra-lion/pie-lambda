@@ -118,6 +118,24 @@ class ControlPlaneDB(metaclass=SingletonMeta):
             db.execute("UPDATE containers SET status = 'available', last_used_at = CURRENT_TIMESTAMP WHERE container_id = ?", (instance_id,))
             await db.commit()
 
+    async def get_containers_to_destroy(self):
+        async with self.db_connection() as db:
+            res = await db.execute("""
+            UPDATE containers SET status = 'destroying'
+            where id in 
+            (
+            SELECT container_id FROM containers 
+            WHERE 
+                (status = 'available' AND last_used_at < datetime('now', '-5 minutes'))
+            OR 
+                (status = 'busy' AND last_used_at < datetime('now', '-30 minutes'))
+            )
+            RETURNING *;
+            """)
+            rows = await res.fetchall()
+            await db.commit()
+            return rows
+
 
     
 if __name__=="__main__":

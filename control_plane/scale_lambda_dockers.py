@@ -91,7 +91,7 @@ class LambdaScaler:
                 await self.reaper_thread_loop()
             except Exception as e:
                 print(f"Error in main process: {e}")
-            await asyncio.sleep(1)
+            
                 
             
 
