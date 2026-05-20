@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from datetime import datetime, timedelta
 import docker
+import certifi
 
 from control_plane.control_plane_db import ControlPlaneDB
 
@@ -83,11 +84,22 @@ def generate_aws_impersonator_cert():
     with open("certs/server.key", "wb") as f:
         f.write(server_key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.TraditionalOpenSSL, serialization.NoEncryption()))
 
+def generate_master_bundle():
+    system_bundle_path = certifi.where()
+    with open(system_bundle_path, "rb") as f:
+        system_bundle = f.read()
+    
+    with open("certs/ca.crt", "ab") as f:
+        f.write(system_bundle)
+
+
+
 def generate_certs():
     if not os.path.exists("certs"):
         os.makedirs("certs", exist_ok=True)
         generate_master_ca()
         generate_aws_impersonator_cert()
+        generate_master_bundle()
 
 def check_if_docker_running():
     try:

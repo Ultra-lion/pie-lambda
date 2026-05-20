@@ -3,3 +3,4 @@ dnslib
 fastapi[standard]
 aiosqlite
 cryptography
+certifi
