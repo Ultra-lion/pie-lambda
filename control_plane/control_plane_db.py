@@ -2,6 +2,9 @@ import aiosqlite
 from contextlib import asynccontextmanager
 import asyncio
 
+
+DEFAULT_CONTAINERS_LIMIT = 10
+
 class SingletonMeta(type):
     _instances = {}
     def __call__(cls, *args, **kwargs):
@@ -10,8 +13,9 @@ class SingletonMeta(type):
         return cls._instances[cls]
 
 class ControlPlaneDB(metaclass=SingletonMeta):
-    def __init__(self):
+    def __init__(self,individual_lambda_scale_limit=None):
         self.db = "pie_lambda.db"
+        self.individual_lambda_scale_limit = individual_lambda_scale_limit or DEFAULT_CONTAINERS_LIMIT
 
 
     @asynccontextmanager
@@ -86,15 +90,25 @@ class ControlPlaneDB(metaclass=SingletonMeta):
             await db.execute("SELECT COUNT(*) FROM containers where lambda_name = ?", (lambda_name,))
             return db.fetchone()[0]
     
+    async def create_provisioning_container(self, lambda_name, request_id):
+        async with self.db_connection() as db:
+            await db.execute("INSERT INTO containers (lambda_name, container_id, ip_address, port, status, reserved_for_request) VALUES (?, ?, ?, ?, ?, ?) RETURNING container_id", (lambda_name, "test", "test", "test", "test", None)) 
+            result = await db.fetchone()
+            await db.commit()
+            return result[0]
 
-    async def add_lambda_deployed_instances(self, lambda_name, container_id, ip_address, port, reserved_for_request=None):
+    async def add_lambda_deployed_instances(self, provisioning_row_id, lambda_name, container_id, ip_address, port, reserved_for_request=None):
         status="available"
         if reserved_for_request:
             status="reserved"
-
-        async with self.db_connection() as db:
-            await db.execute("INSERT INTO containers (lambda_name, container_id, ip_address, port, status, reserved_for_request) VALUES (?, ?, ?, ?, ?, ?)", (lambda_name, container_id, ip_address, port, status, reserved_for_request)) 
-            await db.commit()
+        if provisioning_row_id:
+            async with self.db_connection() as db:
+                await db.execute("UPDATE containers SET container_id = ?, ip_address = ?, port = ?, status = ?, reserved_for_request = ? WHERE container_id = ?", (container_id, ip_address, port, status, reserved_for_request, provisioning_row_id)) 
+                await db.commit()
+        else:
+            async with self.db_connection() as db:
+                await db.execute("INSERT INTO containers (lambda_name, container_id, ip_address, port, status, reserved_for_request) VALUES (?, ?, ?, ?, ?, ?)", (lambda_name, container_id, ip_address, port, status, reserved_for_request)) 
+                await db.commit()
 
     async def remove_lambda_deployed_instances(self, container_ids):
         async with self.db_connection() as db:
@@ -184,6 +198,55 @@ class ControlPlaneDB(metaclass=SingletonMeta):
             WHERE status = 'reserved' and  reserved_for_request = ?;
             """, (request_id,))
             await db.commit()
+
+    async def calculate_scaleup_requests(self):
+        async with self.db_connection() as db:
+            pending_requests = await db.execute("""
+            SELECT lambda_name, COUNT(*) as required_containers
+            FROM requests
+            WHERE status = 'pending'
+            GROUP BY lambda_name
+            ORDER BY priority DESC, created_at ASC;
+            """)
+            pending_requests = await pending_requests.fetchall()
+            containers_counts = await db.execute("SELECT lambda_name, status, COUNT(*) as container_count FROM containers WHERE status in ('available','provisioning', 'reserved', 'busy') GROUP BY lambda_name, status")
+            containers_counts = await containers_counts.fetchall()
+            
+            stats = {}
+            for row in containers_counts:
+                ln = row['lambda_name']
+                st = row['status']
+                cnt = row['container_count']
+                if ln not in stats:
+                    stats[ln] = {'available': 0, 'provisioning': 0, 'reserved': 0, 'busy': 0}
+                stats[ln][st] = cnt
+            results = []
+            # 2. Iterate through pending requests and calculate shortfall
+            for req in pending_requests:
+                name = req['lambda_name']
+                pending_cnt = req['required_containers']
+                
+                # Get current numbers for this lambda
+                s = stats.get(name, {'available': 0, 'provisioning': 0, 'reserved': 0, 'busy': 0})
+                total_existing = sum(s.values())
+                
+                # How many MORE do we need to satisfy the queue?
+                # We ignore 'available' because if they were available, the request wouldn't be pending.
+                # We only care about how many are already being built ('provisioning').
+                needed = pending_cnt - s['provisioning']
+                
+                # How many MORE are we allowed to build?
+                # (Assuming self.individual_lambda_scale_limit is available)
+                allowed = max(0, self.individual_lambda_scale_limit - total_existing)
+                
+                to_create = min(needed, allowed)
+                
+                if to_create > 0:
+                    results.append({
+                        "lambda_name": name,
+                        "required_containers": to_create
+                    })
+            return results
 
 if __name__=="__main__":
     test_db = ControlPlaneDB()

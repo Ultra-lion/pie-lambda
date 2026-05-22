@@ -28,6 +28,8 @@ class LambdaScaler:
         pass
 
     def scale_up_lambda(self, lambda_func_name, request_id_to_reserve_for=None):
+        provisioning_row_id_future = asyncio.run_coroutine_threadsafe(self.control_plane_db.create_provisioning_container(lambda_func_name, request_id_to_reserve_for), self.loop)
+        provisioning_row_id = provisioning_row_id_future.result()
         container = self.docker_client.containers.run(
             image= self.get_lambda_image_name(lambda_func_name),
             name= self.get_existing_lambda_containers(lambda_func_name),
@@ -36,7 +38,8 @@ class LambdaScaler:
             dns=["pie-lambda-control-plane"]
         )
 
-        asyncio.run_coroutine_threadsafe(self.control_plane_db.add_lambda_deployed_instances(container.id, container.attrs['NetworkSettings']['IPAddress'], container.attrs['NetworkSettings']['Ports']['80/tcp'][0]['HostPort'], request_id_to_reserve_for), self.loop)
+        future = asyncio.run_coroutine_threadsafe(self.control_plane_db.add_lambda_deployed_instances(container.id, container.attrs['NetworkSettings']['IPAddress'], container.attrs['NetworkSettings']['Ports']['80/tcp'][0]['HostPort'], request_id_to_reserve_for), self.loop)
+        future.result()
         if request_id_to_reserve_for:
             self.loop.call_soon_threadsafe(self.poke_back_queue.put_nowait, request_id_to_reserve_for)
 
@@ -57,21 +60,24 @@ class LambdaScaler:
     async def scaler_thread_loop(self):
        
         scale_up_requests = await self.control_plane_db.calculate_scaleup_requests()
-        scale_thread_tasks = []
-        for scale_up_request in scale_up_requests:
-            request_id_to_reserve_for = None
-            try:
-                request_id_to_reserve_for = self.sync_requests_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                pass
+        if scale_up_requests:
+            scale_thread_tasks = []
+            for scale_up_request in scale_up_requests:
+                request_id_to_reserve_for = None
+                try:
+                    request_id_to_reserve_for = self.sync_requests_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
 
-            lambda_func_name = scale_up_request.get(lambda_func_name)
-            required_containers = scale_up_request.get(required_containers)
-            deployed_containers = await self.control_plane_db.get_available_lambda_instance(lambda_func_name)
-            for _ in range(required_containers):
-                if len(deployed_containers) < self.individual_lambda_scale_limit:
-                    scale_thread_tasks.append(asyncio.to_thread(self.provision_container(lambda_func_name, request_id_to_reserve_for)))
-        await asyncio.gather(*scale_thread_tasks)
+                lambda_func_name = scale_up_request.get(lambda_func_name)
+                required_containers = scale_up_request.get(required_containers)
+                deployed_containers = await self.control_plane_db.get_available_lambda_instance(lambda_func_name)
+                for _ in range(required_containers):
+                    if len(deployed_containers) < self.individual_lambda_scale_limit:
+                        scale_thread_tasks.append(asyncio.to_thread(self.provision_container(lambda_func_name, request_id_to_reserve_for)))
+            await asyncio.gather(*scale_thread_tasks)
+        
+        
         ready_ids = []
         while not self.poke_back_queue.empty():
             ready_ids.append(self.poke_back_queue.get_nowait())

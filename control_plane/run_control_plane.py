@@ -6,6 +6,20 @@ import sys
 import asyncio
 
 from control_plane_db import ControlPlaneDB
+import socket
+
+def get_local_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # Doesn't have to be reachable
+        s.connect(('10.255.255.255', 1))
+        IP = s.getsockname()[0]
+    except Exception:
+        IP = '127.0.0.1'
+    finally:
+        s.close()
+    return IP
+
 
 # Ensure the root directory is in the path for internal imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -37,10 +51,13 @@ if __name__ == "__main__":
     except FileNotFoundError:
         print(f"⚠️ Config not found at {config_path}, using defaults.")
         config = {}
+    
+    config['control_plane_ip'] = get_local_ip()
+    os.environ['CONTROL_PLANE_IP'] = config['control_plane_ip']
 
-    # We need the control plane IP for DNS resolution
-    if 'control_plane_ip' not in config:
-        config['control_plane_ip'] = os.getenv("CONTROL_PLANE_IP", "127.0.0.1")
+    print(f"""
+    PIE-LAMBDA IS ONLINE: Set your Docker Container's DNS to {config['control_plane_ip']} or your Boto3 endpoint to http://{config['control_plane_ip']}
+    """)
 
     db_manager = ControlPlaneDB()
     asyncio.run(db_manager.initialize_db())

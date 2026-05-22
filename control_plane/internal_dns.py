@@ -3,6 +3,7 @@ from dnslib.server import DNSServer, BaseResolver
 import re
 import socket 
 import struct
+import os
 
 intercepted_domain = '.*lambda.*\.amazonaws\.com.*'
 
@@ -98,7 +99,7 @@ def run_server(config:dict):
 
 if __name__=="__main__":
     run_server({
-        "control_plane_ip": "172.18.0.2"
+        "control_plane_ip": os.getenv("CONTROL_PLANE_IP", "127.0.0.1")
     })
 
     print("oooga")
