@@ -8,10 +8,35 @@ import uuid
 import os
 import json
 
+
+
+class ScalerClient:
+    def __init__(self):
+        self.writer = None
+        self.reader = None
+        self.socket_conn = None
+        self.lock = asyncio.Lock()
+
+    async def initialize(self):
+        self.reader, self.writer = await asyncio.open_unix_connection("/tmp/scaler.sock")
+
+
+    async def poke_scaler(self, request_id):
+        try:
+            async with self.lock:
+                self.writer.write(f"{request_id}".encode())
+                await self.writer.drain()
+                self.writer.close()
+                await self.writer.wait_closed()
+        except Exception as e:
+            print(e)
+        
+
 control_plane_db = ControlPlaneDB()
 
 waiting_room = {}
-    
+
+scaler_client = ScalerClient()
 
 
 app = FastAPI()
@@ -49,6 +74,7 @@ async def ipc_server():
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(ipc_server())
+    await scaler_client.initialize()
 
 
 
@@ -74,30 +100,24 @@ def extract_lambda_name(path: str):
     return clean_name
 
 
-async def poke_scaler():
-    try:
-        reader, writer = await asyncio.open_unix_connection("/tmp/scaler.sock")
-        writer.write("scale".encode())
-        await writer.drain()
-        writer.close()
-        await writer.wait_closed()
-    except Exception as e:
-        print(e)
+
 
 async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = None, type:str = "RequestResponse"):
     request_id = str(uuid.uuid4())
     control_plane_db.create_lambda_request(request_id, lambda_func_name, request)
     if type == "RequestResponse":
         try:
-            instance = control_plane_db.get_available_lambda_instance(lambda_func_name)
-            if not instance:
-                waiting_room[request_id] = asyncio.Event()
-                control_plane_db.create_scaleup_request(request_id, lambda_func_name)
-                try:
-                    await asyncio.wait_for(waiting_room[request_id].wait(), timeout=30)
-                except asyncio.TimeoutError:
-                    control_plane_db.update_lambda_request(lambda_func_name, {"status": "timeout", "response": "Lambda is busy"})
-                    return "Lambda is busy"
+            instance=None
+            while not instance:
+                instance = control_plane_db.get_available_lambda_instance(lambda_func_name)
+                if not instance:
+                    waiting_room[request_id] = asyncio.Event()
+                    asyncio.create_task(scaler_client.poke_scaler(request_id))
+                    try:
+                        await asyncio.wait_for(waiting_room[request_id].wait(), timeout=30)
+                        break
+                    except asyncio.TimeoutError:
+                        pass
             
             async with httpx.AsyncClient() as client:
                 response = await client.request(

@@ -46,10 +46,10 @@ class LambdaScaler:
         except:
             pass
         try:
-            self.docker_client.containers.get(container_id).remove()
+            self.docker_client.containers.get(container_id).remove(force=True)
         except:
             pass
-        
+
     def provision_container(self, lambda_func_name, request_id_to_reserve_for=None):        
         self.scale_up_lambda(lambda_func_name, request_id_to_reserve_for)
     
