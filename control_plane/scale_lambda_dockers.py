@@ -11,7 +11,7 @@ from control_plane_db import ControlPlaneDB
 
 
 class LambdaScaler:
-    def __init__(self, individual_lambda_scale_limit=5):
+    def __init__(self, individual_lambda_scale_limit=5, config):
         self.docker_client = docker.from_env()
         self.individual_lambda_scale_limit = individual_lambda_scale_limit
         self.control_plane_db = ControlPlaneDB()
@@ -20,6 +20,7 @@ class LambdaScaler:
         self.poke_back_queue = asyncio.Queue()
         self.loop = None
         self.docker_sdk_check_time = None
+        self.ca_path = config.get("ca_path")
         
     def get_lambda_image_name(self, lambda_func_name):
         pass
@@ -35,6 +36,9 @@ class LambdaScaler:
             name= self.get_existing_lambda_containers(lambda_func_name),
             detach=True,
             network="lambda_bridge",
+            volumes={
+                self.ca_path: {'bind': '/etc/ssl/certs/ca.crt', 'mode': 'ro'},
+            },
             dns=["pie-lambda-control-plane"]
         )
 
