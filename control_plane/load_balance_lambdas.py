@@ -7,6 +7,7 @@ import uvicorn
 import uuid
 import os
 import json
+import time
 
 
 
@@ -32,11 +33,11 @@ class ScalerClient:
             print(e)
         
 
-control_plane_db = ControlPlaneDB()
+control_plane_db = None
 
 waiting_room = {}
 
-scaler_client = ScalerClient()
+scaler_client = None
 
 
 app = FastAPI()
@@ -56,6 +57,8 @@ async def ipc_server():
                 for ready_id in ready_ids:
                     if ready_id in waiting_room:
                         waiting_room[ready_id].set()
+                    else:
+                        asyncio.create_task(control_plane_db.release_stale_reservations(ready_id))
                         
 
         except Exception as e:
@@ -74,8 +77,12 @@ async def ipc_server():
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(ipc_server())
+    global scaler_client
+    scaler_client = ScalerClient()
     await scaler_client.initialize()
 
+    global control_plane_db
+    control_plane_db = ControlPlaneDB()
 
 
 def extract_lambda_name(path: str):
@@ -108,11 +115,17 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
     if type == "RequestResponse":
         try:
             instance=None
+            scaling_requested = False
+            timeout_start = time.time()
             while not instance:
-                instance = control_plane_db.get_available_lambda_instance(lambda_func_name)
-                if not instance:
+                if time.time() - timeout_start > 30:
+                    del waiting_room[request_id]
+                    return 504
+                instance = control_plane_db.get_available_lambda_instance(request_id, lambda_func_name)
+                if not instance and not scaling_requested:
+                    scaling_requested = True
                     waiting_room[request_id] = asyncio.Event()
-                    asyncio.create_task(scaler_client.poke_scaler(request_id))
+                    asyncio.create_task(scaler_client.poke_scaler(json.dumps({"request_id":request_id})))
                     try:
                         await asyncio.wait_for(waiting_room[request_id].wait(), timeout=30)
                         break
