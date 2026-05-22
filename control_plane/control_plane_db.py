@@ -256,6 +256,11 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                         "required_containers": to_create
                     })
             return results
+    
+    async def get_component_health(self, component_name):
+        async with self.db_connection() as db:
+            result = await db.execute("SELECT * FROM control_plane_health WHERE component_name = ?", (component_name,))
+            return await result.fetchone()
 
 if __name__=="__main__":
     test_db = ControlPlaneDB()

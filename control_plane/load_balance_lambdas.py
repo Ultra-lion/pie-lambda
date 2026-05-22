@@ -19,6 +19,8 @@ class ScalerClient:
         self.lock = asyncio.Lock()
 
     async def initialize(self):
+        while not os.path.exists("/tmp/scaler.sock"):
+            await asyncio.sleep(0.1)
         self.reader, self.writer = await asyncio.open_unix_connection("/tmp/scaler.sock")
 
 
@@ -125,6 +127,13 @@ def extract_lambda_name(path: str):
 
 
 async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = None, type:str = "RequestResponse"):
+    
+    scaler_health = await control_plane_db.get_component_health("SCALER")
+    if not scaler_health or (time.time() - scaler_health['last_heartbeat'] > 20):
+        return 503  # Service Unavailable - Scaler is dead
+    
+    
+    
     request_id = str(uuid.uuid4())
     control_plane_db.create_lambda_request(request_id, lambda_func_name, request)
     if type == "RequestResponse":

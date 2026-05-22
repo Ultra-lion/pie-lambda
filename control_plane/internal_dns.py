@@ -108,18 +108,18 @@ async def start_heartbeat(component_name):
 
 
 
-def run_server(config:dict):
+async def run_server(config:dict):
     asyncio.create_task(start_heartbeat("DNS_SERVER"))
     resolver = HybridResolver(config)
     server = DNSServer(resolver, port=53, address="0.0.0.0")
-    server.start()
+    await asyncio.to_thread(server.start)
     print("oi")
 
 
 
 if __name__=="__main__":
-    run_server({
+    asyncio.run(run_server({
         "control_plane_ip": os.getenv("CONTROL_PLANE_IP", "127.0.0.1")
-    })
+    }))
 
     print("oooga")
