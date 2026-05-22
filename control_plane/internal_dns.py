@@ -4,6 +4,10 @@ import re
 import socket 
 import struct
 import os
+import asyncio
+
+
+from control_plane_db import ControlPlaneDB
 
 intercepted_domain = '.*lambda.*\.amazonaws\.com.*'
 
@@ -85,11 +89,27 @@ class HybridResolver(BaseResolver):
             return reply
 
         return request.reply()
+    
+
+
+async def start_heartbeat(component_name):
+    db = ControlPlaneDB()
+    pid = os.getpid()
+    
+    while True:
+        async with db.db_connection() as conn:
+            await conn.execute(
+                "REPLACE INTO control_plane_health (component_name, pid, last_heartbeat) VALUES (?, ?, CURRENT_TIMESTAMP)",
+                (component_name, pid)
+            )
+            await conn.commit()
+        await asyncio.sleep(5)
 
 
 
 
 def run_server(config:dict):
+    asyncio.create_task(start_heartbeat("DNS_SERVER"))
     resolver = HybridResolver(config)
     server = DNSServer(resolver, port=53, address="0.0.0.0")
     server.start()

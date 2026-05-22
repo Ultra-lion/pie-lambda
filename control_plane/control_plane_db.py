@@ -71,6 +71,15 @@ class ControlPlaneDB(metaclass=SingletonMeta):
             )
             """)
 
+            await db.execute("""
+            CREATE TABLE IF NOT EXISTS control_plane_health (
+                component_name TEXT PRIMARY KEY,
+                pid INTEGER NOT NULL,
+                last_heartbeat TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """)
+
+
             await db.execute("CREATE INDEX IF NOT EXISTS idx_containers_status ON containers(lambda_name, status);")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_containers_last_used ON containers(last_used_at, status);")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_requests ON requests(status, priority);")

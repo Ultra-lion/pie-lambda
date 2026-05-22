@@ -4,6 +4,7 @@ from control_plane_db import ControlPlaneDB
 import asyncio
 import httpx
 import asyncio
+import os
 
 class LambdaQueueHandler:
     def __init__(self):
@@ -32,6 +33,7 @@ class LambdaQueueHandler:
             return None
 
     async def handle_enqueued_events(self):
+        asyncio.create_task(self.start_heartbeat("EVENTS_HANDLER"))
         while True:
             try:
                 enqueued_events = await self.control_plane_db.get_enqueued_events()
@@ -46,6 +48,21 @@ class LambdaQueueHandler:
             except Exception as e:
                 print(f"Error in handle_enqueued_events: {e}")
             await asyncio.sleep(1)
+
+    async def start_heartbeat(component_name):
+        db = ControlPlaneDB()
+        pid = os.getpid()
+        
+        while True:
+            async with db.db_connection() as conn:
+                await conn.execute(
+                    "REPLACE INTO control_plane_health (component_name, pid, last_heartbeat) VALUES (?, ?, CURRENT_TIMESTAMP)",
+                    (component_name, pid)
+                )
+                await conn.commit()
+            await asyncio.sleep(5)
+
+
 
 
 

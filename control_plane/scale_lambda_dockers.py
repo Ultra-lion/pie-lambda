@@ -156,10 +156,28 @@ class LambdaScaler:
                 await asyncio.gather(self.reaper_thread_loop(), self.check_docker_container_sdk())
             except Exception as e:
                 print(f"Error in main process: {e}")
+
+    async def start_heartbeat(component_name):
+        db = ControlPlaneDB()
+        pid = os.getpid()
+        
+        while True:
+            async with db.db_connection() as conn:
+                await conn.execute(
+                    "REPLACE INTO control_plane_health (component_name, pid, last_heartbeat) VALUES (?, ?, CURRENT_TIMESTAMP)",
+                    (component_name, pid)
+                )
+                await conn.commit()
+            await asyncio.sleep(5)
+
     
 async def main():
     lambda_scaler = LambdaScaler()
-    await asyncio.gather(lambda_scaler.scaler_main_process(), lambda_scaler.ipc_server())
+    await asyncio.gather(
+        lambda_scaler.scaler_main_process(), 
+        lambda_scaler.ipc_server(),
+        lambda_scaler.start_heartbeat("SCALER")
+    )
             
                 
             
