@@ -128,6 +128,8 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
                     asyncio.create_task(scaler_client.poke_scaler(json.dumps({"request_id":request_id})))
                     try:
                         await asyncio.wait_for(waiting_room[request_id].wait(), timeout=30)
+                        del waiting_room[request_id]
+                        instance = control_plane_db.get_available_lambda_instance(request_id, lambda_func_name)
                         break
                     except asyncio.TimeoutError:
                         pass
