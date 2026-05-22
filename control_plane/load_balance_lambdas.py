@@ -169,7 +169,7 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
             control_plane_db.update_lambda_request(lambda_func_name, {"status": "success", "response": response.content})
             return response.content
         finally:
-            control_plane_db.mark_instance_as_available(instance.instance_id)
+            await control_plane_db.mark_instance_as_available(instance.instance_id)
             waiting_room.pop(request_id, None)
 
     elif type == "Event":

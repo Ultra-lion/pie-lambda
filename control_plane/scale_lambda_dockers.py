@@ -157,7 +157,7 @@ class LambdaScaler:
             except Exception as e:
                 print(f"Error in main process: {e}")
 
-    async def start_heartbeat(component_name):
+    async def start_heartbeat(self, component_name):
         db = ControlPlaneDB()
         pid = os.getpid()
         

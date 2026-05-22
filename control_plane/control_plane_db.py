@@ -149,7 +149,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
         async with self.db_connection() as db:
             res = await db.execute("""
             UPDATE containers SET status = 'destroying'
-            where id in 
+            where container_id in 
             (
             SELECT container_id FROM containers 
             WHERE 
@@ -176,6 +176,13 @@ class ControlPlaneDB(metaclass=SingletonMeta):
         async with self.db_connection() as db:
             await db.execute("INSERT INTO requests (request_id, lambda_name, event_type, priority, request_data, response_data, status) VALUES (?, ?, ?, ?, ?, ?, ?)", (request_id, lambda_func_name, request.get("event_type"), request.get("priority"), request.get("request_data"), request.get("response_data"), request.get("status")))
             await db.commit()
+    async def update_lambda_request(self, request_id, payload):
+        status = payload.get(status)
+        response_data = payload.get(response_data)
+        async with self.db_connection() as db:
+            await db.execute("UPDATE requests SET status = ?, response_data = ? WHERE request_id = ?", (status, response_data, request_id))
+            await db.commit()
+
 
     async def get_all_containers(self):
         async with self.db_connection() as db:
@@ -199,6 +206,52 @@ class ControlPlaneDB(metaclass=SingletonMeta):
             """, (request_id, lambda_func_name, request_id))
             return res.fetchone()
     
+    async def get_available_lambda_instance_for_assignment(self, events):
+        # 1. Group events by lambda_name
+        events_by_lambda = {}
+        for event in events:
+            # Note: you used event.lambda_name but it's a dict/Row right? 
+            # If it's a dictionary/row use event['lambda_name'], else event.lambda_name
+            l_name = event['lambda_name'] 
+            if l_name not in events_by_lambda:
+                events_by_lambda[l_name] = []
+            events_by_lambda[l_name].append(event)
+            
+        assigned_containers = {}
+
+        async with self.db_connection() as db:
+            # 2. Process each lambda cluster atomically
+            for lambda_name, lambda_events in events_by_lambda.items():
+                required_count = len(lambda_events)
+                
+                # claim up to 'required_count' containers
+                res = await db.execute("""
+                    UPDATE containers 
+                    SET status = 'busy', 
+                        last_used_at = CURRENT_TIMESTAMP 
+                    WHERE container_id IN (
+                        SELECT container_id FROM containers 
+                        WHERE status = 'available' 
+                        AND lambda_name = ?
+                        ORDER BY created_at ASC
+                        LIMIT ?
+                    )
+                    RETURNING *;
+                """, (lambda_name, required_count))
+                
+                claimed_rows = await res.fetchall()
+                
+                # 3. Pair them! (Up to the amount we successfully claimed)
+                for i, container_row in enumerate(claimed_rows):
+                    matched_event = lambda_events[i]
+                    # Map the request_id to the container dict/row
+                    assigned_containers[matched_event['request_id']] = container_row
+                    
+            await db.commit()
+            
+        # Returns a dict: { request_id: container_row }
+        return assigned_containers
+
     async def release_stale_reservations(self, request_id):
         async with self.db_connection() as db:
             await db.execute("""
@@ -261,6 +314,21 @@ class ControlPlaneDB(metaclass=SingletonMeta):
         async with self.db_connection() as db:
             result = await db.execute("SELECT * FROM control_plane_health WHERE component_name = ?", (component_name,))
             return await result.fetchone()
+    
+    async def get_enqueued_events(self):
+        async with self.db_connection() as db:
+            result = await db.execute(f"SELECT * FROM requests WHERE status = 'pending' and type = 'event' limit {self.individual_lambda_scale_limit}")
+            return await result.fetchall()
+
+    async def mark_requests_as_processing(self, requests):
+        async with self.db_connection() as db:
+            await db.execute("UPDATE requests SET status = 'processing' WHERE request_id IN ?", (requests,))
+            await db.commit()
+    
+    async def mark_requests_as_processed(self, requests):
+        async with self.db_connection() as db:
+            await db.execute("UPDATE requests SET status = 'processed' WHERE request_id IN ?", (requests,))
+            await db.commit()
 
 if __name__=="__main__":
     test_db = ControlPlaneDB()

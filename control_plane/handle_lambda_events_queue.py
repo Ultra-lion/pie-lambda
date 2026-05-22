@@ -49,7 +49,7 @@ class LambdaQueueHandler:
                 print(f"Error in handle_enqueued_events: {e}")
             await asyncio.sleep(1)
 
-    async def start_heartbeat(component_name):
+    async def start_heartbeat(self, component_name):
         db = ControlPlaneDB()
         pid = os.getpid()
         
