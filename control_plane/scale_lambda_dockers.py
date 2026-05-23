@@ -23,17 +23,20 @@ class LambdaScaler:
         self.ca_path = config.get("ca_path")
         
     def get_lambda_image_name(self, lambda_func_name):
-        pass
+        # This should probably query your DB's lambda_images table
+        return f"{lambda_func_name}:latest" 
     
-    def get_existing_lambda_containers(self, lambda_func_name):
-        pass
+    def generate_container_name(self, lambda_func_name):
+        # This should return a unique name for the new container
+        import uuid
+        return f"lambda-{lambda_func_name}-{uuid.uuid4().hex[:8]}"
 
     def scale_up_lambda(self, lambda_func_name, request_id_to_reserve_for=None):
         provisioning_row_id_future = asyncio.run_coroutine_threadsafe(self.control_plane_db.create_provisioning_container(lambda_func_name, request_id_to_reserve_for), self.loop)
         provisioning_row_id = provisioning_row_id_future.result()
         container = self.docker_client.containers.run(
             image= self.get_lambda_image_name(lambda_func_name),
-            name= self.get_existing_lambda_containers(lambda_func_name),
+            name= self.generate_container_name(lambda_func_name),
             detach=True,
             network="lambda_bridge",
             volumes={
