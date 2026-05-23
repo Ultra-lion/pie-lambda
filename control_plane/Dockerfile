@@ -23,6 +23,7 @@ COPY . /app/control_plane/
 
 COPY server.crt /app/control_plane/server.crt
 COPY server.key /app/control_plane/server.key
+COPY config.json /app/control_plane/config.json
 
 WORKDIR /app/control_plane/
 

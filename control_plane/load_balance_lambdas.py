@@ -44,7 +44,7 @@ scaler_client = None
 
 
 
-
+background_tasks = set()
 
 async def ipc_server():
     socket_path = "/tmp/lb.sock"
@@ -91,18 +91,26 @@ async def start_heartbeat(component_name):
         await asyncio.sleep(5)
     
 @asynccontextmanager
-async def startup_event():
-    asyncio.create_task(ipc_server())
+async def startup_event(app: FastAPI):
+    loop = asyncio.get_running_loop()
+    ipc_task = loop.create_task(ipc_server())
     global scaler_client
     scaler_client = ScalerClient()
+
     await scaler_client.initialize()
 
     global control_plane_db
     control_plane_db = ControlPlaneDB()
 
-    asyncio.create_task(start_heartbeat("LOAD_BALANCER"))
+    heartbeat_task = loop.create_task(start_heartbeat("LOAD_BALANCER"))
 
+    ipc_task.add_done_callback(background_tasks.discard)
+    heartbeat_task.add_done_callback(background_tasks.discard)
 
+    yield
+
+    ipc_task.cancel()
+    heartbeat_task.cancel()
 
 
 app = FastAPI(lifespan=startup_event)

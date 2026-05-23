@@ -79,20 +79,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from internal_dns import run_server as run_dns_server
 from load_balance_lambdas import app
 
-def start_load_balancer(config):
-    print("🔒 Starting HTTPS Control Plane (Load Balancer) on port 443...")
-    # NOTE: Be sure your certs are volume-mounted to these paths!
-    uvicorn.run(
-        app, 
-        host="0.0.0.0", 
-        port=443, 
-        ssl_keyfile="/app/control_plane/certs/server.key", 
-        ssl_certfile="/app/control_plane/certs/server.crt"
-    )
-
-def start_dns_interceptor(config):
-    print("🌐 Starting DNS Interceptor on port 53...")
-    run_dns_server(config)
 
 async def main():
     db_manager = ControlPlaneDB()

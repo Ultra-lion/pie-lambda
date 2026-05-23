@@ -121,7 +121,8 @@ class ControlPlaneDB(metaclass=SingletonMeta):
 
     async def remove_lambda_deployed_instances(self, container_ids):
         async with self.db_connection() as db:
-            await db.execute("DELETE FROM containers WHERE container_id in ?", (container_ids,)) 
+            placeholders = ','.join(['?'] * len(container_ids))
+            await db.execute(f"DELETE FROM containers WHERE container_id in ({placeholders})", container_ids) 
             await db.commit()
     
     
@@ -178,8 +179,8 @@ class ControlPlaneDB(metaclass=SingletonMeta):
             await db.execute("INSERT INTO requests (request_id, lambda_name, event_type, priority, request_data, response_data, status) VALUES (?, ?, ?, ?, ?, ?, ?)", (request_id, lambda_func_name, request.get("event_type"), request.get("priority"), request.get("request_data"), request.get("response_data"), request.get("status")))
             await db.commit()
     async def update_lambda_request(self, request_id, payload):
-        status = payload.get(status)
-        response_data = payload.get(response_data)
+        status = payload.get("status")
+        response_data = payload.get("response_data")
         async with self.db_connection() as db:
             await db.execute("UPDATE requests SET status = ?, response_data = ? WHERE request_id = ?", (status, response_data, request_id))
             await db.commit()
@@ -187,8 +188,8 @@ class ControlPlaneDB(metaclass=SingletonMeta):
 
     async def get_all_containers(self):
         async with self.db_connection() as db:
-            res = await db.execute("SELECT * FROM containers")
-            return res.fetchall()
+            cursor = await db.execute("SELECT * FROM containers")
+            return await cursor.fetchall()
     
     async def get_available_lambda_instance(self, request_id, lambda_func_name):
         async with self.db_connection() as db:
@@ -329,7 +330,8 @@ class ControlPlaneDB(metaclass=SingletonMeta):
     
     async def mark_requests_as_processed(self, requests):
         async with self.db_connection() as db:
-            await db.execute("UPDATE requests SET status = 'processed' WHERE request_id IN ?", (requests,))
+            placeholders = ','.join(['?'] * len(requests))
+            await db.execute(f"UPDATE requests SET status = 'processed' WHERE request_id IN ({placeholders})", requests)
             await db.commit()
 
 if __name__=="__main__":

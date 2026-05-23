@@ -11,7 +11,7 @@ from control_plane_db import ControlPlaneDB
 
 
 class LambdaScaler:
-    def __init__(self, config, individual_lambda_scale_limit=5):
+    def __init__(self, config={}, individual_lambda_scale_limit=5):
         self.docker_client = docker.from_env()
         self.individual_lambda_scale_limit = individual_lambda_scale_limit
         self.control_plane_db = ControlPlaneDB()
@@ -135,9 +135,13 @@ class LambdaScaler:
             os.remove(socket_path)
         async def handle_poke(reader, writer):
             data = await reader.read(1024)
-            request_data = json.loads(data.decode())
-            await self.sync_requests_queue.put(request_data)
-            self.IPC_event.set()
+            if data:
+                try:
+                    request_data = json.loads(data.decode())
+                    await self.sync_requests_queue.put(request_data)
+                    self.IPC_event.set()
+                except json.JSONDecodeError:
+                    print(f"Error parsing request: {data}")
             writer.write(b"OK")
             await writer.drain()
             writer.close()
@@ -159,7 +163,7 @@ class LambdaScaler:
                 except asyncio.TimeoutError:
                     pass
 
-                await self.scaler_thread_loop(), 
+                await self.scaler_thread_loop()
                 await asyncio.gather(self.reaper_thread_loop(), self.check_docker_container_sdk())
             except Exception as e:
                 print(f"Error in main process: {e}")
