@@ -231,3 +231,6 @@ current_project_progress.md
 *.db*
 imp_convos/*
 top_priorities.md
+
+*.crt
+*.key
