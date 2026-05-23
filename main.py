@@ -148,13 +148,6 @@ if __name__=="__main__":
 
     generate_certs()
     
-    client = docker.from_env()
-
-    for img in client.images.list():
-        print(img.tags)
-        print(img.id)
-
-    # exit(1)
     match command:
         case "build":
             build(config)
