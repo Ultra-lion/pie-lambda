@@ -154,7 +154,7 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
     
     
     request_id = str(uuid.uuid4())
-    control_plane_db.create_lambda_request(request_id, lambda_func_name, request)
+    await control_plane_db.create_lambda_request(request_id, lambda_func_name, request)
     if type == "RequestResponse":
         try:
             instance=None
@@ -164,7 +164,7 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
                 if datetime.datetime.now() - timeout_start > datetime.timedelta(seconds=30):
                     del waiting_room[request_id]
                     return 504
-                instance = control_plane_db.get_available_lambda_instance(request_id, lambda_func_name)
+                instance = await control_plane_db.get_available_lambda_instance(request_id, lambda_func_name)
                 if not instance and not scaling_requested:
                     scaling_requested = True
                     waiting_room[request_id] = asyncio.Event()
@@ -172,7 +172,7 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
                     try:
                         await asyncio.wait_for(waiting_room[request_id].wait(), timeout=30)
                         del waiting_room[request_id]
-                        instance = control_plane_db.get_available_lambda_instance(request_id, lambda_func_name)
+                        instance = await control_plane_db.get_available_lambda_instance(request_id, lambda_func_name)
                         break
                     except asyncio.TimeoutError:
                         pass
