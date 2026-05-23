@@ -5,11 +5,11 @@ from .validators import LambdaImageConfig
 from typing import List
 import sys
 
+from control_plane.utils import BASE_SUBSTR, BASE_NETWORK_BRIDGE
 
 client = docker.from_env()
 
-BASE_SUBSTR = "pie-lambda"
-BASE_NETWORK_BRIDGE = "lambda_bridge"
+
 
 def build_lambda_dockers(lambda_funcs_to_deploy:List[LambdaImageConfig]):
 

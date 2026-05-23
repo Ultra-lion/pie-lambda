@@ -11,12 +11,14 @@ import subprocess
 import signal
 
 
+from utils import get_local_ip, parse_timestamp
+
 from control_plane_db import ControlPlaneDB
 COMPONENT_COMMANDS = {
     "LOAD_BALANCER": [sys.executable, "load_balance_lambdas.py"],
     "SCALER": [sys.executable, "scale_lambda_dockers.py"],
     "DNS_SERVER": [sys.executable, "internal_dns.py"],
-    "EVENTS_HANDLER": [sys.executable, "handle_lambda_events_queue.py"]
+    # "EVENTS_HANDLER": [sys.executable, "handle_lambda_events_queue.py"]
 }
 
 def restart_process(name):
@@ -31,26 +33,14 @@ def restart_process(name):
 
 
 
-def get_local_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        # Doesn't have to be reachable
-        s.connect(('10.255.255.255', 1))
-        IP = s.getsockname()[0]
-    except Exception:
-        IP = '127.0.0.1'
-    finally:
-        s.close()
-    return IP
 
-def parse_timestamp(ts_string):
-    # SQLite default format is YYYY-MM-DD HH:MM:SS
-    return datetime.datetime.strptime(ts_string, "%Y-%m-%d %H:%M:%S")
+WATCHDOG_LOOP_TIME = 100
+PROCESS_KILL_TIME = 1000
 
 async def watchdog_loop(processes):
     db = ControlPlaneDB()
     while True:
-        await asyncio.sleep(10)
+        await asyncio.sleep(WATCHDOG_LOOP_TIME)
         async with db.db_connection() as conn:
             cursor = await conn.execute("SELECT * FROM control_plane_health")
             health_stats = {row['component_name']: row for row in await cursor.fetchall()}
@@ -64,13 +54,13 @@ async def watchdog_loop(processes):
 
             # 2. Check if the process is "Ghosted" (Frozen/Deadlocked)
             stat = health_stats.get(name)
-            if not stat or (datetime.datetime.now() - parse_timestamp(stat['last_heartbeat'])).total_seconds() > 20:
+            if not stat or (datetime.datetime.now() - parse_timestamp(stat['last_heartbeat'])).total_seconds() > PROCESS_KILL_TIME:
                 print(f"ALARM: {name} is frozen. Sending SIGKILL to PID {stat['pid']}...")
                 try:
                     os.kill(stat['pid'], signal.SIGKILL)
                 except ProcessLookupError:
                     pass
-                processes[name] = await restart_process(name)
+                processes[name] = restart_process(name)
 
 
 # Ensure the root directory is in the path for internal imports

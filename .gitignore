@@ -220,13 +220,18 @@ __marimo__/
 certs/*
 */certs/*
 .vscode/*
+*/.vscode/*
 config.json
+*/config.json
 
 current_project_progress.md
+*/current_project_progress.md
 
 .agents/*
+*/.agents/*
 
 .build/*
+*/.build/*
 
 *.db*
 imp_convos/*
