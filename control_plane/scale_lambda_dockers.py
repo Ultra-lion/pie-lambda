@@ -4,14 +4,14 @@ import docker
 import asyncio
 import os
 import json 
-import datetime
+from datetime import datetime, timedelta
 
 from control_plane_db import ControlPlaneDB
 
 
 
 class LambdaScaler:
-    def __init__(self, individual_lambda_scale_limit=5, config):
+    def __init__(self, config, individual_lambda_scale_limit=5):
         self.docker_client = docker.from_env()
         self.individual_lambda_scale_limit = individual_lambda_scale_limit
         self.control_plane_db = ControlPlaneDB()
@@ -73,12 +73,12 @@ class LambdaScaler:
                 except asyncio.QueueEmpty:
                     pass
 
-                lambda_func_name = scale_up_request.get(lambda_func_name)
-                required_containers = scale_up_request.get(required_containers)
+                lambda_func_name = scale_up_request.get("lambda_func_name")
+                required_containers = scale_up_request.get("required_containers")
                 deployed_containers = await self.control_plane_db.get_available_lambda_instance(lambda_func_name)
                 for _ in range(required_containers):
                     if len(deployed_containers) < self.individual_lambda_scale_limit:
-                        scale_thread_tasks.append(asyncio.to_thread(self.provision_container(lambda_func_name, request_id_to_reserve_for)))
+                        scale_thread_tasks.append(asyncio.to_thread(self.provision_container, lambda_func_name, request_id_to_reserve_for))
             await asyncio.gather(*scale_thread_tasks)
         
         

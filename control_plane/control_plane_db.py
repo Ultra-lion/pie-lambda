@@ -133,7 +133,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
     
     async def mark_instance_as_busy(self, instance_id, request_id):
         async with self.db_connection() as db:
-            result = await db.execute("UPDATE containers SET status = 'busy', last_used_at = CURRENT_TIMESTAMP, request_id = ? WHERE container_id = ? and status = 'available'", (request_id, instance_id))
+            result = await db.execute("UPDATE containers SET status = 'busy', last_used_at = CURRENT_TIMESTAMP, reserved_for_request = ? WHERE container_id = ? and status = 'available'", (request_id, instance_id))
             if result.rowcount == 0:
                 return False
             await db.execute("UPDATE requests SET status = 'busy', last_used_at = CURRENT_TIMESTAMP WHERE request_id = ?", (request_id,))
@@ -142,7 +142,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
 
     async def mark_instance_as_available(self, instance_id):
         async with self.db_connection() as db:
-            db.execute("UPDATE containers SET status = 'available', last_used_at = CURRENT_TIMESTAMP WHERE container_id = ?", (instance_id,))
+            await db.execute("UPDATE containers SET status = 'available', last_used_at = CURRENT_TIMESTAMP WHERE container_id = ?", (instance_id,))
             await db.commit()
 
     async def get_containers_to_destroy(self):
@@ -169,7 +169,8 @@ class ControlPlaneDB(metaclass=SingletonMeta):
         if not container_ids:
             return
         async with self.db_connection() as db:
-            await db.execute(f"DELETE FROM containers WHERE container_id IN ({','.join(container_ids)})") 
+            placeholders = ','.join(['?'] * len(container_ids))
+            await db.execute(f"DELETE FROM containers WHERE container_id IN ({placeholders})", container_ids) 
             await db.commit()
 
     async def create_lambda_request(self, request_id, lambda_func_name, request):
@@ -317,12 +318,13 @@ class ControlPlaneDB(metaclass=SingletonMeta):
     
     async def get_enqueued_events(self):
         async with self.db_connection() as db:
-            result = await db.execute(f"SELECT * FROM requests WHERE status = 'pending' and type = 'event' limit {self.individual_lambda_scale_limit}")
+            result = await db.execute(f"SELECT * FROM requests WHERE status = 'pending' and event_type = 'event' limit {self.individual_lambda_scale_limit}")
             return await result.fetchall()
 
     async def mark_requests_as_processing(self, requests):
         async with self.db_connection() as db:
-            await db.execute("UPDATE requests SET status = 'processing' WHERE request_id IN ?", (requests,))
+            placeholders = ','.join(['?'] * len(requests))
+            await db.execute(f"UPDATE requests SET status = 'processing' WHERE request_id IN ({placeholders})", requests)
             await db.commit()
     
     async def mark_requests_as_processed(self, requests):

@@ -1,5 +1,6 @@
 import httpx
 from fastapi import FastAPI, Request, BackgroundTasks
+from contextlib import asynccontextmanager
 from urllib.parse import urlparse, unquote
 from control_plane_db import ControlPlaneDB
 import asyncio
@@ -42,7 +43,7 @@ waiting_room = {}
 scaler_client = None
 
 
-app = FastAPI()
+
 
 
 async def ipc_server():
@@ -89,7 +90,7 @@ async def start_heartbeat(component_name):
             await conn.commit()
         await asyncio.sleep(5)
     
-@app.on_event("startup")
+@asynccontextmanager
 async def startup_event():
     asyncio.create_task(ipc_server())
     global scaler_client
@@ -101,6 +102,10 @@ async def startup_event():
 
     asyncio.create_task(start_heartbeat("LOAD_BALANCER"))
 
+
+
+
+app = FastAPI(lifespan=startup_event)
 
 def extract_lambda_name(path: str):
     parsed_url = urlparse(path)
@@ -166,7 +171,7 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
                     params=request.query_params,
                     content=await request.body(),
                 )
-            control_plane_db.update_lambda_request(lambda_func_name, {"status": "success", "response": response.content})
+            await control_plane_db.update_lambda_request(lambda_func_name, {"status": "success", "response": response.content})
             return response.content
         finally:
             await control_plane_db.mark_instance_as_available(instance.instance_id)
@@ -197,7 +202,7 @@ if __name__=="__main__":
         app, 
         host="0.0.0.0", 
         port=443,
-        ssl_keyfile="/app/control_plane/certs/server.key", 
-        ssl_certfile="/app/control_plane/certs/server.crt",
+        ssl_keyfile="/app/control_plane/server.key", 
+        ssl_certfile="/app/control_plane/server.crt",
         log_level="DEBUG"
     )
