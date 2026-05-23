@@ -1,3 +1,4 @@
+import datetime
 import httpx
 from fastapi import FastAPI, Request, BackgroundTasks
 from contextlib import asynccontextmanager
@@ -9,6 +10,7 @@ import uuid
 import os
 import json
 import time
+import datetime
 
 
 
@@ -142,8 +144,12 @@ def extract_lambda_name(path: str):
 async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = None, type:str = "RequestResponse"):
     
     scaler_health = await control_plane_db.get_component_health("SCALER")
-    if not scaler_health or (time.time() - scaler_health['last_heartbeat'] > 20):
-        return 503  # Service Unavailable - Scaler is dead
+    if scaler_health:
+        last_heartbeat = datetime.datetime.strptime(scaler_health['last_heartbeat'], "%Y-%m-%d %H:%M:%S").timestamp()
+    else:
+        last_heartbeat = 0
+    if not scaler_health or (time.time() - last_heartbeat > 20):
+        return 503  # Service Unavailable, Scaler is dead
     
     
     
@@ -153,9 +159,9 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
         try:
             instance=None
             scaling_requested = False
-            timeout_start = time.time()
+            timeout_start = datetime.datetime.now()
             while not instance:
-                if time.time() - timeout_start > 30:
+                if datetime.datetime.now() - timeout_start > datetime.timedelta(seconds=30):
                     del waiting_room[request_id]
                     return 504
                 instance = control_plane_db.get_available_lambda_instance(request_id, lambda_func_name)

@@ -96,13 +96,14 @@ class ControlPlaneDB(metaclass=SingletonMeta):
 
     async def count_deployed_lambda_instance(self, lambda_name):
         async with self.db_connection() as db:
-            await db.execute("SELECT COUNT(*) FROM containers where lambda_name = ?", (lambda_name,))
-            return db.fetchone()[0]
+            res = await db.execute("SELECT COUNT(*) FROM containers where lambda_name = ?", (lambda_name,))
+            row = await res.fetchone()
+            return row[0]
     
     async def create_provisioning_container(self, lambda_name, request_id):
         async with self.db_connection() as db:
-            await db.execute("INSERT INTO containers (lambda_name, container_id, ip_address, port, status, reserved_for_request) VALUES (?, ?, ?, ?, ?, ?) RETURNING container_id", (lambda_name, "test", "test", "test", "test", None)) 
-            result = await db.fetchone()
+            res = await db.execute("INSERT INTO containers (lambda_name, container_id, ip_address, port, status, reserved_for_request) VALUES (?, ?, ?, ?, ?, ?) RETURNING container_id", (lambda_name, "test", "test", "test", "test", None)) 
+            result = await res.fetchone()
             await db.commit()
             return result[0]
 
@@ -206,7 +207,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
             )
             RETURNING *;
             """, (request_id, lambda_func_name, request_id))
-            return res.fetchone()
+            return await res.fetchone()
     
     async def get_available_lambda_instance_for_assignment(self, events):
         # 1. Group events by lambda_name
@@ -265,16 +266,16 @@ class ControlPlaneDB(metaclass=SingletonMeta):
 
     async def calculate_scaleup_requests(self):
         async with self.db_connection() as db:
-            pending_requests = await db.execute("""
+            res_requests = await db.execute("""
             SELECT lambda_name, COUNT(*) as required_containers
             FROM requests
             WHERE status = 'pending'
             GROUP BY lambda_name
             ORDER BY priority DESC, created_at ASC;
             """)
-            pending_requests = await pending_requests.fetchall()
-            containers_counts = await db.execute("SELECT lambda_name, status, COUNT(*) as container_count FROM containers WHERE status in ('available','provisioning', 'reserved', 'busy') GROUP BY lambda_name, status")
-            containers_counts = await containers_counts.fetchall()
+            pending_requests = await res_requests.fetchall()
+            res_counts = await db.execute("SELECT lambda_name, status, COUNT(*) as container_count FROM containers WHERE status in ('available','provisioning', 'reserved', 'busy') GROUP BY lambda_name, status")
+            containers_counts = await res_counts.fetchall()
             
             stats = {}
             for row in containers_counts:
