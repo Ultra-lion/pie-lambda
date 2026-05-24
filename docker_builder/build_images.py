@@ -35,6 +35,7 @@ def build_lambda_dockers(lambda_funcs_to_deploy:List[LambdaImageConfig]):
                 "lambda_handler_func_name": lambda_config["lambda_handler_function_name"],
                 "lambda_func_code_dir": f".",
                 "main_handler_file_name": lambda_config["func_handler_file_name"],
+                "lambda_func_name": lambda_config["func_name"],
             }
         )
 

@@ -6,19 +6,23 @@ if [ -f .env ]; then
   export $(grep -v '^#' .env | xargs)
 fi
 
-# 2. THE FIX: Force /var/task to be a package to support relative imports
+# 2. THE FIX: Force the task directory to be a package named after the function
+# This supports BOTH absolute imports (from func_name.utils) and relative imports (.utils)
 if [ ! -f /var/task/__init__.py ]; then
   touch /var/task/__init__.py
 fi
+
+# Create a symlink so python can find the package by its real name
+if [ ! -L "/var/${LAMBDA_FUNC_NAME}" ]; then
+  ln -s /var/task "/var/${LAMBDA_FUNC_NAME}"
+fi
+
 export PYTHONPATH=$PYTHONPATH:/var
 
-export AWS_LAMBDA_RUNTIME_API=127.0.0.1:8080
-
-# 3. THE FIX: Prepend 'task.' to the handler argument
-# This allows relative imports like 'from .module' to find the 'task' parent
+# 3. THE FIX: Redirect the handler to the new package path
 ORIGINAL_HANDLER=$1
-shift # remove original $1 from args
-NEW_HANDLER="task.$ORIGINAL_HANDLER"
+shift 
+NEW_HANDLER="${LAMBDA_FUNC_NAME}.${ORIGINAL_HANDLER}"
 
 # 4. Hand off to the actual Lambda Runtime Interface Client (RIC)
 # "$@" will pass through any remaining arguments
