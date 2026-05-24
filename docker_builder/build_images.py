@@ -22,6 +22,10 @@ def build_lambda_dockers(lambda_funcs_to_deploy:List[LambdaImageConfig]):
         os.system(f"cp -r {lambda_config['func_code_path']} .build/{lambda_config['func_name']}")
         os.system(f"cp docker_builder/python/Dockerfile .build/{lambda_config['func_name']}/Dockerfile")
         os.system(f"cp docker_builder/python/bootstrap.sh .build/{lambda_config['func_name']}/bootstrap.sh")
+
+        if not os.path.exists(f"{lambda_config['func_code_path']}/requirements.txt"):
+            print(f"⚠️ Warning: No requirements.txt found for {lambda_config['func_name']}.")
+            print(f"💡 Tip: If your Lambda has external dependencies like 'openai', please create a requirements.txt at {lambda_config['func_code_path']}/requirements.txt to ensure they are installed correctly.")
         
         image, build_logs = client.images.build(
             path=f".build/{lambda_config['func_name']}",
