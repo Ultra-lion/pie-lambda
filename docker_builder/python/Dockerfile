@@ -6,7 +6,7 @@ ARG lambda_func_code_dir
 
 ARG main_handler_file_name
 
-COPY ${lambda_func_code_dir}/* ${LAMBDA_TASK_ROOT}/
+COPY ${lambda_func_code_dir}/ ${LAMBDA_TASK_ROOT}/
 
 RUN chmod +x ${LAMBDA_TASK_ROOT}/bootstrap.sh
 

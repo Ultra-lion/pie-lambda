@@ -7,4 +7,10 @@ fi
 
 # 2. Hand off to the actual Lambda Runtime Interface Client (RIC)
 # "$@" will pass through the handler you defined in CMD
-exec /usr/bin/python3 -m awslambdaric "$@"
+PYTHON_BIN=$(command -v python3 || command -v python)
+if [ -z "$PYTHON_BIN" ]; then
+  echo "Error: Python not found in PATH"
+  exit 1
+fi
+
+exec "$PYTHON_BIN" -m awslambdaric "$@"
