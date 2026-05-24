@@ -52,7 +52,7 @@ class LambdaScaler:
             dns=[get_local_ip()]
         )
         log("Scaler", "scale_up_lambda", status="container_started", container_id=container.id)
-
+        container.reload()
         future = asyncio.run_coroutine_threadsafe(self.control_plane_db.add_lambda_deployed_instances(container.id, container.attrs['NetworkSettings']['IPAddress'], container.attrs['NetworkSettings']['Ports']['80/tcp'][0]['HostPort'], request_id_to_reserve_for), self.loop)
         future.result()
         if request_id_to_reserve_for:

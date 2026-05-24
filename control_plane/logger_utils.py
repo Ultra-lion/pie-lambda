@@ -24,7 +24,7 @@ funcs_to_print_data_for = [
     "scale_up_lambda",
 ]
 
-print_all = False
+print_all = True
 
 def log(service, function, **datapoints):
     if print_all or function in funcs_to_print_data_for:

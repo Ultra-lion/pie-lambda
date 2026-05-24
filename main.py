@@ -13,8 +13,6 @@ from datetime import datetime, timedelta
 import docker
 import certifi
 
-from control_plane.control_plane_db import ControlPlaneDB
-
 
 def generate_master_ca():
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -142,8 +140,6 @@ if __name__=="__main__":
     if not command:
         raise Exception("Need a command")
     
-    control_plane_db = ControlPlaneDB()
-
     check_if_docker_running()
 
     generate_certs()

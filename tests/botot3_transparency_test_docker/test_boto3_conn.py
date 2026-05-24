@@ -39,7 +39,7 @@ def test_lambda_connectivity():
         # The FunctionName triggers the path interception in your control plane.
         # Payload must be bytes or a file-like object.
         invoke_response = client.invoke(
-            FunctionName='test-function',
+            FunctionName='mps_row_validator_2',
             InvocationType='RequestResponse', # Sync call
             Payload=json.dumps({"message": "Hello from Boto3"}).encode('utf-8')
         )
