@@ -7,10 +7,17 @@ def run_query(query):
     cursor = conn.cursor()
 
     cursor.execute(query)
-    for row in cursor.fetchall():
-        print(row)
+
+    # 1. Save changes (crucial for DELETE, INSERT, UPDATE)
+    conn.commit()
+
+    # 2. Only try to print rows if it was a SELECT query
+    if cursor.description:
+        for row in cursor.fetchall():
+            print(row)
 
     conn.close()
 
 
 run_query("select * from containers;")
+# run_query("delete  from containers;")

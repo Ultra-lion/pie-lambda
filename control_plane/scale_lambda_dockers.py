@@ -60,7 +60,14 @@ class LambdaScaler:
         )
         log("Scaler", "scale_up_lambda", status="container_started", container_id=container.id)
         container.reload()
-        future = asyncio.run_coroutine_threadsafe(self.control_plane_db.add_lambda_deployed_instances(container.id, container.attrs['NetworkSettings']['IPAddress'], container.attrs['NetworkSettings']['Ports']['80/tcp'][0]['HostPort'], request_id_to_reserve_for), self.loop)
+        future = asyncio.run_coroutine_threadsafe(
+            self.control_plane_db.add_lambda_deployed_instances(
+                container.id, 
+                container.attrs['NetworkSettings']["Networks"][BASE_NETWORK_BRIDGE]["IPAddress"], 
+                request_id_to_reserve_for,
+                provisioning_row_id
+                ),
+                self.loop)
         future.result()
         if request_id_to_reserve_for:
             self.loop.call_soon_threadsafe(self.poke_back_queue.put_nowait, request_id_to_reserve_for)
@@ -211,8 +218,8 @@ class LambdaScaler:
                     # log("Scaler", "scaler_main_process", status="periodic_check") # Too noisy
                     pass
 
-                # await self.scaler_thread_loop()
-                # await asyncio.gather(self.reaper_thread_loop(), self.check_docker_container_sdk())
+                await self.scaler_thread_loop()
+                await asyncio.gather(self.reaper_thread_loop(), self.check_docker_container_sdk())
             except Exception as e:
                 log("Scaler", "scaler_main_process", error=str(e))
                 print(f"Error in main process: {e}")
