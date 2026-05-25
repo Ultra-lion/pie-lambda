@@ -225,6 +225,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
             await db.execute("INSERT INTO requests (request_id, lambda_name, event_type, priority, request_data, response_data, status) VALUES (?, ?, ?, ?, ?, ?, ?)", (request_id, lambda_func_name, event_type, priority, request_data, response_data, status))
             await db.commit()
             log("ControlPlaneDB", "create_lambda_request", status="created")
+
     async def update_lambda_request(self, request_id, payload):
         log("ControlPlaneDB", "update_lambda_request", request_id=request_id, payload=payload)
         status = payload.get("status")
@@ -234,6 +235,19 @@ class ControlPlaneDB(metaclass=SingletonMeta):
             await db.commit()
             log("ControlPlaneDB", "update_lambda_request", status="updated")
 
+    async def delete_stuck_requests(self):
+        async with self.db_connection() as db:
+            await db.execute("""
+                UPDATE requests 
+                SET status = 'failed',
+                WHERE request_id in (
+                    SELECT request_id FROM requests 
+                    WHERE 
+                    (status in ('pending', 'in_progress') and event_type='RequestResponse' and created_at < datetime('now', '-5 minutes'))
+                    OR (status in ('pending', 'in_progress') and event_type='Event' and created_at < datetime('now', '-120 minutes'))
+                    
+                )
+            """)
 
     async def get_all_containers(self):
         log("ControlPlaneDB", "get_all_containers")

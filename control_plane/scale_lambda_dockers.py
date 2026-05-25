@@ -221,6 +221,9 @@ class LambdaScaler:
         server = await asyncio.start_unix_server(handle_poke, socket_path)
         async with server:
             await server.serve_forever()
+    
+    async def delete_stuck_requests(self):
+        await self.control_plane_db.delete_stuck_requests()
        
     async def scaler_main_process(self):
         log("Scaler", "scaler_main_process", status="starting")
@@ -240,7 +243,8 @@ class LambdaScaler:
                 await asyncio.gather(
                     self.reaper_thread_loop(), 
                     self.check_docker_container_sdk(),
-                    self.delete_exited_pie_lambda_containers()
+                    self.delete_exited_pie_lambda_containers(),
+                    self.delete_stuck_requests(),
                     )
             except Exception as e:
                 log("Scaler", "scaler_main_process", error=str(e))
