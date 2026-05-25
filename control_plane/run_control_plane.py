@@ -16,6 +16,7 @@ from utils import get_local_ip, parse_timestamp
 from control_plane_db import ControlPlaneDB
 COMPONENT_COMMANDS = {
     "LOAD_BALANCER": [sys.executable, "load_balance_lambdas.py"],
+    "WORKER_MANAGER": [sys.executable, "worker_manager.py"],
     "SCALER": [sys.executable, "scale_lambda_dockers.py"],
     "DNS_SERVER": [sys.executable, "internal_dns.py"],
     # "EVENTS_HANDLER": [sys.executable, "handle_lambda_events_queue.py"]

@@ -211,8 +211,8 @@ class LambdaScaler:
                     # log("Scaler", "scaler_main_process", status="periodic_check") # Too noisy
                     pass
 
-                await self.scaler_thread_loop()
-                await asyncio.gather(self.reaper_thread_loop(), self.check_docker_container_sdk())
+                # await self.scaler_thread_loop()
+                # await asyncio.gather(self.reaper_thread_loop(), self.check_docker_container_sdk())
             except Exception as e:
                 log("Scaler", "scaler_main_process", error=str(e))
                 print(f"Error in main process: {e}")

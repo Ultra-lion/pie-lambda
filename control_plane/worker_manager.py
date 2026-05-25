@@ -89,7 +89,7 @@ async def runtime_invocation_next():
     random_uuid = uuid.uuid4()
     available_lambdas[random_uuid] = asyncio.Event()
 
-    await asyncio.wait_for(available_lambdas[random_uuid].wait())
+    await available_lambdas[random_uuid].wait()
 
     return {"status": "no_work_yet"}
 
