@@ -241,3 +241,5 @@ top_priorities.md
 *.key
 
 failure_vectors.md
+
+lambda_RIE_protocol.md
