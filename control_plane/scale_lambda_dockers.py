@@ -126,6 +126,24 @@ class LambdaScaler:
     def get_docker_containers(self):
         return self.docker_client.containers.list()
 
+    def get_destroy_dead_pie_lambda_dockers(self):
+        stopped_containers = self.docker_client.containers.list(all=True, filters={'status': 'exited'})
+        stopped_pie_lambda_containers = []
+        for container in stopped_containers:
+            if container.image.tags:
+                for tag in container.image.tags:
+                    if BASE_SUBSTR.lower() in tag.lower():
+                        container.remove()
+                        stopped_pie_lambda_containers.append(container)
+                        break
+        
+        return stopped_pie_lambda_containers
+    
+    async def delete_exited_pie_lambda_containers(self):
+        stopped_pie_lambda_containers = await asyncio.to_thread(self.get_destroy_dead_pie_lambda_dockers)
+        container_ids_to_delete = [container.id for container in stopped_pie_lambda_containers]
+        await self.control_plane_db.remove_destroyed_containers(container_ids_to_delete)
+
     async def check_docker_container_sdk(self):
         if self.docker_sdk_check_time is None or self.docker_sdk_check_time < datetime.now() - timedelta(seconds=30):
             log("Scaler", "check_docker_container_sdk", status="starting_sync")
@@ -139,7 +157,7 @@ class LambdaScaler:
             db_container_ids = [c['container_id'] for c in all_db_containers]
             
             container_ids_to_delete = [cid for cid in db_container_ids if cid not in container_ids_to_not_delete]
-            
+
             if container_ids_to_delete:
                 log("Scaler", "check_docker_container_sdk", status="found_ghost_containers", count=len(container_ids_to_delete))
                 await self.control_plane_db.remove_destroyed_containers(container_ids_to_delete)
@@ -219,7 +237,11 @@ class LambdaScaler:
                     pass
 
                 await self.scaler_thread_loop()
-                await asyncio.gather(self.reaper_thread_loop(), self.check_docker_container_sdk())
+                await asyncio.gather(
+                    self.reaper_thread_loop(), 
+                    self.check_docker_container_sdk(),
+                    self.delete_exited_pie_lambda_containers()
+                    )
             except Exception as e:
                 log("Scaler", "scaler_main_process", error=str(e))
                 print(f"Error in main process: {e}")

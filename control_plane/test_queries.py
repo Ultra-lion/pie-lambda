@@ -19,5 +19,5 @@ def run_query(query):
     conn.close()
 
 
-run_query("select * from containers;")
+run_query("select count(*) from containers;")
 # run_query("delete  from containers;")
