@@ -23,6 +23,9 @@ class LambdaScaler:
         self.loop = None
         self.docker_sdk_check_time = None
         self.ca_path = config.get("ca_path")
+        if not self.ca_path:
+            self.ca_path = "/home/rohan/Desktop/FUN-Projects/pie-lambda/certs/"
+            # raise Exception("Cert path not found in config")
         
     def get_lambda_image_name(self, lambda_func_name):
         image_name = f"{BASE_SUBSTR}-{lambda_func_name}:latest"

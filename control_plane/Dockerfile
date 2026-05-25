@@ -21,8 +21,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # This ensures that internal imports like 'from control_plane.control_plane_db import ...' work correctly
 COPY . /app/control_plane/
 
-COPY server.crt /app/control_plane/server.crt
-COPY server.key /app/control_plane/server.key
+COPY ../certs/* /app/control_plane/
+
 COPY config.json /app/control_plane/config.json
 
 WORKDIR /app/control_plane/

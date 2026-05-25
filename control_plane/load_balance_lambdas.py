@@ -11,6 +11,9 @@ import os
 import json
 import time
 import datetime
+import multiprocessing
+
+
 from logger_utils import log
 
 
@@ -155,6 +158,7 @@ def extract_lambda_name(path: str):
 
 
 
+
 async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = None, type:str = "RequestResponse"):
     log("LoadBalancer", "proxy_api_call", lambda_func_name=lambda_func_name, invocation_type=type)
     
@@ -203,24 +207,24 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
                         log("LoadBalancer", "proxy_api_call", request_id=request_id, status="scaling_timeout")
                         pass
             
-            log("LoadBalancer", "proxy_api_call", request_id=request_id, status="proxying_to_instance", instance_ip=instance.ip_address, instance_port=instance.port)
+            log("LoadBalancer", "proxy_api_call", request_id=request_id, status="proxying_to_instance", instance_ip=instance['ip_address'], instance_port=instance['port'])
             
             async with httpx.AsyncClient() as client:
                 response = await client.request(
                     method=request.method,
-                    url=f"http://{instance.ip_address}:{instance.port}",
+                    url=f"http://{instance['ip_address']}:{instance['port']}",
                     headers=request.headers,
                     params=request.query_params,
                     content=await request.body(),
                 )
             
             log("LoadBalancer", "proxy_api_call", request_id=request_id, status="response_received", response_status=response.status_code)
-            await control_plane_db.update_lambda_request(lambda_func_name, {"status": "success", "response": response.content})
+            await control_plane_db.update_lambda_request(request_id, {"status": "success", "response_data": response.text})
             return response.content
         finally:
             if instance:
-                log("LoadBalancer", "proxy_api_call", request_id=request_id, status="marking_instance_available", instance_id=instance.instance_id)
-                await control_plane_db.mark_instance_as_available(instance.instance_id)
+                log("LoadBalancer", "proxy_api_call", request_id=request_id, status="marking_instance_available", instance_id=instance['container_id'])
+                await control_plane_db.mark_instance_as_available(instance['container_id'])
             waiting_room.pop(request_id, None)
 
     elif type == "Event":
@@ -233,8 +237,8 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
 async def get_lambda_images():
     return []
 
-@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
-async def proxy_request(request: Request, path: str):
+@app.post("/{sdk_date}/functions/{function_identifier:path}/invocations")
+async def proxy_request(request: Request, path: str, sdk_date: str):
     log("LoadBalancer", "proxy_request", path=path)
     lambda_func_name = extract_lambda_name(path)
     log("LoadBalancer", "proxy_request", lambda_func_name=lambda_func_name)
@@ -249,8 +253,18 @@ async def proxy_request(request: Request, path: str):
     log("LoadBalancer", "proxy_request", invocation_type=invocation_type)
 
     return await proxy_api_call(request, lambda_func_name, invocation_type)
-    
-if __name__=="__main__":
+
+
+
+# 3. Management/Diagnostic Route
+@app.get("/images")
+async def list_available_images():
+    log("LoadBalancer", "list_available_images")
+    return await get_lambda_images()
+
+
+
+def run_https():
     uvicorn.run(
         app, 
         host="0.0.0.0", 
@@ -259,3 +273,6 @@ if __name__=="__main__":
         ssl_certfile="/app/control_plane/server.crt",
         log_level="DEBUG"
     )
+
+if __name__=="__main__":
+    run_https()

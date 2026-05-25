@@ -27,23 +27,31 @@ def build_lambda_dockers(lambda_funcs_to_deploy:List[LambdaImageConfig]):
             print(f"⚠️ Warning: No requirements.txt found for {lambda_config['func_name']}.")
             print(f"💡 Tip: If your Lambda has external dependencies like 'openai', please create a requirements.txt at {lambda_config['func_code_path']}/requirements.txt to ensure they are installed correctly.")
         
-        image, build_logs = client.images.build(
-            path=f".build/{lambda_config['func_name']}",
-            tag=f"{BASE_SUBSTR}-{lambda_config['func_name']}:latest",
-            rm=True,
-            buildargs={
-                "lambda_handler_func_name": lambda_config["lambda_handler_function_name"],
-                "lambda_func_code_dir": f".",
-                "main_handler_file_name": lambda_config["func_handler_file_name"],
-                "lambda_func_name": lambda_config["func_name"],
-            }
-        )
+        try:
+            image, build_logs = client.images.build(
+                path=f".build/{lambda_config['func_name']}",
+                tag=f"{BASE_SUBSTR}-{lambda_config['func_name']}:latest",
+                rm=True,
+                buildargs={
+                    "lambda_handler_func_name": lambda_config["lambda_handler_function_name"],
+                    "lambda_func_code_dir": f".",
+                    "main_handler_file_name": lambda_config["func_handler_file_name"],
+                    "lambda_func_name": lambda_config["func_name"],
+                }
+            )
 
-        for line in build_logs:
-            if "stream" in line:
-                print(line["stream"].strip())
-        print(f"Successfully built: {image.tags}")
-        return image
+            for line in build_logs:
+                if "stream" in line:
+                    print(line["stream"].strip())
+            print(f"Successfully built: {image.tags}")
+            return image
+        except docker.errors.BuildError as e:
+            print(f"\n❌ Docker build failed for {lambda_config['func_name']}. Detailed logs below:")
+            for line in e.build_log:
+                if "stream" in line:
+                    print(line["stream"].strip())
+            # Re-raise so the process still exits with error
+            raise e
 
     created_images = []
 
@@ -89,6 +97,7 @@ def setup_docker_network_bridge():
     build_docker_network()
 
 def build_control_plane_docker():
+    
     image, build_logs = client.images.build(
         path="control_plane",
         tag=f"{BASE_SUBSTR}-control-plane:latest",
@@ -122,6 +131,8 @@ def deploy_control_plane_docker(config:dict):
     control_plane_docker_image = client.images.get(f"{BASE_SUBSTR}-control-plane:latest")
     
     host_socket = get_host_docker_socket()
+    
+    ca_path = os.path.abspath("certs")
 
     volumes = {
         host_socket:{
@@ -131,7 +142,12 @@ def deploy_control_plane_docker(config:dict):
         "/home/rohan/Desktop/FUN-Projects/pie-lambda/control_plane":{
             'bind':'/app/control_plane',
             'mode':'rw'
+        },
+        ca_path:{
+            'bind':'/etc/ssl/certs/ca.crt',
+            'mode':'ro'
         }
+        
     }
     
     client.containers.run(
