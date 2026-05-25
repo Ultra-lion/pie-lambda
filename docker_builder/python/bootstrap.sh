@@ -17,12 +17,27 @@ if [ ! -L "/var/${LAMBDA_FUNC_NAME}" ]; then
   ln -s /var/task "/var/${LAMBDA_FUNC_NAME}"
 fi
 
-export PYTHONPATH=$PYTHONPATH:/var
+# Ensure /var is in PYTHONPATH without creating leading/trailing colons
+if [ -z "$PYTHONPATH" ]; then
+  export PYTHONPATH="/var"
+else
+  export PYTHONPATH="$PYTHONPATH:/var"
+fi
 
-# 3. THE FIX: Redirect the handler to the new package path
-ORIGINAL_HANDLER=$1
-shift 
-NEW_HANDLER="${LAMBDA_FUNC_NAME}.${ORIGINAL_HANDLER}"
+# 3. THE FIX: Resolve the handler
+# Priority 1: Environment variables set in Dockerfile
+# Priority 2: Positional argument passed via CMD
+if [ -n "$MAIN_HANDLER_FILE_NAME" ] && [ -n "$LAMBDA_HANDLER_FUNC_NAME" ]; then
+  echo "Poochie: Using handler from ENV variables..."
+  MODULE_NAME="${MAIN_HANDLER_FILE_NAME%.*}"
+  NEW_HANDLER="${LAMBDA_FUNC_NAME}.${MODULE_NAME}.${LAMBDA_HANDLER_FUNC_NAME}"
+  # Consume the CMD argument if it was passed so it doesn't pollute $@
+  [ $# -gt 0 ] && shift
+elif [ $# -gt 0 ]; then
+  echo "Poochie: Falling back to handler from CMD argument..."
+  NEW_HANDLER="${LAMBDA_FUNC_NAME}.${1}"
+  [ $# -gt 0 ] && shift
+fi
 
 # 4. Hand off to the actual Lambda Runtime Interface Client (RIC)
 # "$@" will pass through any remaining arguments

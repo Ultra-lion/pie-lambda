@@ -40,7 +40,7 @@ class LambdaScaler:
         provisioning_row_id_future = asyncio.run_coroutine_threadsafe(self.control_plane_db.create_provisioning_container(lambda_func_name, request_id_to_reserve_for, container_id), self.loop)
         provisioning_row_id = provisioning_row_id_future.result()
         log("Scaler", "scale_up_lambda", status="row_created", provisioning_id=provisioning_row_id)
-        
+        control_plane_ip = get_local_ip()
         container = self.docker_client.containers.run(
             image= self.get_lambda_image_name(lambda_func_name),
             name= container_id,
@@ -49,7 +49,11 @@ class LambdaScaler:
             volumes={
                 self.ca_path: {'bind': '/etc/ssl/certs/ca.crt', 'mode': 'ro'},
             },
-            dns=[get_local_ip()]
+            dns=[control_plane_ip],
+            environment={
+                "AWS_LAMBDA_RUNTIME_API": f"{control_plane_ip}",
+                "LAMBDA_FUNC_NAME": lambda_func_name
+            }
         )
         log("Scaler", "scale_up_lambda", status="container_started", container_id=container.id)
         container.reload()

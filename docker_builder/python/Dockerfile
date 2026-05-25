@@ -8,6 +8,8 @@ ARG main_handler_file_name
 
 ARG lambda_func_name
 ENV LAMBDA_FUNC_NAME=${lambda_func_name}
+ENV LAMBDA_HANDLER_FUNC_NAME=${lambda_handler_func_name}
+ENV MAIN_HANDLER_FILE_NAME=${main_handler_file_name}
 
 COPY ${lambda_func_code_dir}/ ${LAMBDA_TASK_ROOT}/
 
