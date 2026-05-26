@@ -1,6 +1,6 @@
 import datetime
 import httpx
-from fastapi import FastAPI, Request, BackgroundTasks
+from fastapi import FastAPI, Request, HTTPException, status
 from contextlib import asynccontextmanager
 from urllib.parse import urlparse, unquote
 from control_plane_db import ControlPlaneDB
@@ -19,11 +19,13 @@ from logger_utils import log
 control_plane_db = None
 
 available_lambdas = {}
+
 lambdas_pending_registration = {}
 
-lambda_ip_container_map = {}
+registered_lambdas = {}
 
-lambda_request_events = {}
+lambda_request_events={}
+lambda_request_payloads = {}
 lambda_request_responses = {}
 
 scaler_client = None
@@ -104,19 +106,30 @@ app = FastAPI(lifespan=startup_event)
 
 
 
-@app.post("/proxy_request/{request_id}")
-async def proxy_request(request: Request, request_id:str):
+@app.post("/proxy_request/{lambda_name}/{request_id}", time)
+async def proxy_request(request: Request, request_id:str, lambda_name:str):
     global scaler_client
-    lambda_id=None
-    while not lambda_id:
-        lambda_id = next(iter(available_lambdas))
-        if not lambda_id:
+    available_lambda_ip, available_lambda_event=None
+    while not available_lambda_ip:
+        available_lambda_ip = next(iter(available_lambdas.get(lambda_name,{})))
+        if not available_lambda_ip:
             await scaler_client.poke_scaler()
             await asyncio.sleep(0.1)
-    lambda_event = lambda_request_events.pop(lambda_id)
+        else:
+            available_lambda_event = available_lambdas[lambda_name].pop(available_lambda_ip)
+            break
+    
     lambda_request_events[request_id]=asyncio.Event()
-    lambda_event.set()
-    await asyncio.wait_for(lambda_request_events[request_id].wait())
+    lambda_request_payloads[available_lambda_ip] = await request.json()
+    available_lambda_event.set()
+    try:
+        await asyncio.wait_for(lambda_request_events[request_id].wait())
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="The upstream server failed to respond in time."
+        )
+    
     return lambda_request_responses.pop(request_id)
 
 
@@ -130,7 +143,7 @@ async def register_container(request: Request):
     lambda_name = container_data.get("lambda_name")
 
     if container_ip in lambdas_pending_registration:
-        lambda_ip_container_map[container_ip] = lambda_name
+        registered_lambdas[container_ip] = lambda_name
         event = lambdas_pending_registration.pop(container_ip)
         if event:
             event.set()
@@ -148,9 +161,9 @@ async def runtime_invocation_next(request: Request):
     lambda_ip = request.client.host
     log("LoadBalancer", "runtime_invocation_next", status="polling_for_work")
     # Implement long-polling logic here to hand work to containers
-    if lambda_ip not in lambda_ip_container_map:
+    if lambda_ip not in registered_lambdas:
         lambdas_pending_registration[lambda_ip] = asyncio.Event()
-        while lambda_ip not in lambda_ip_container_map:
+        while lambda_ip not in registered_lambdas:
             try:
                 asyncio.wait_for(lambdas_pending_registration[lambda_ip].wait(), timeout=0.1)
                 lambdas_pending_registration[lambda_ip].clear()
@@ -159,15 +172,20 @@ async def runtime_invocation_next(request: Request):
             except asyncio.TimeoutError:
                 container = await control_plane_db.get_available_lambda_instance
                 if container:
-                    lambda_ip_container_map[lambda_ip] = container['lambda_name']
+                    registered_lambdas[lambda_ip] = container['lambda_name']
                     lambdas_pending_registration[lambda_ip].clear()
                     del lambdas_pending_registration[lambda_ip]
                     break
-    available_lambdas[lambda_ip] = asyncio.Event()
-    await available_lambdas[lambda_ip].wait()
-    
+    lambda_name = registered_lambdas[lambda_ip]
+    if lambda_name not in available_lambdas:
+        available_lambdas[lambda_name]={}
+    available_lambdas[lambda_name][lambda_ip] = asyncio.Event()
 
-    return {"status": "no_work_yet"}
+    await available_lambdas[lambda_name][lambda_ip].wait()
+
+    lambda_payload = lambda_request_payloads.get(lambda_ip)
+
+    return lambda_payload
 
 @app.post("/{sdk_date}/runtime/invocation/{request_id}/response")
 async def runtime_invocation_response(request_id: str, request: Request):
