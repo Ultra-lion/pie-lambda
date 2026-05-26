@@ -326,17 +326,13 @@ class ControlPlaneDB(metaclass=SingletonMeta):
         # Returns a dict: { request_id: container_row }
         log("ControlPlaneDB", "get_available_lambda_instance_for_assignment", total_assigned=len(assigned_containers))
         return assigned_containers
-
-    async def release_stale_reservations(self, request_id):
-        log("ControlPlaneDB", "release_stale_reservations", request_id=request_id)
+    
+    async def get_lambda_container_by_ip(self, ip):
+        log("ControlPlaneDB", "get_lambda_container_by_ip", ip=ip)
         async with self.db_connection() as db:
-            await db.execute("""
-            UPDATE containers 
-            SET status = 'available', reserved_for_request = NULL 
-            WHERE status = 'reserved' and  reserved_for_request = ?;
-            """, (request_id,))
-            await db.commit()
-            log("ControlPlaneDB", "release_stale_reservations", status="released")
+            res = await db.execute("SELECT lambda_name FROM containers WHERE ip_address = ?", (ip,))
+            return await res.fetchone()
+
 
     async def calculate_scaleup_requests(self):
         log("ControlPlaneDB", "calculate_scaleup_requests", status="starting")

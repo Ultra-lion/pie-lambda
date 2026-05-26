@@ -19,7 +19,9 @@ from logger_utils import log
 control_plane_db = None
 
 available_lambdas = {}
+lambdas_pending_registration = {}
 
+lambda_ip_container_map = {}
 
 lambda_request_events = {}
 lambda_request_responses = {}
@@ -52,8 +54,6 @@ class ScalerClient:
             async with self.lock:
                 self.writer.write(f"{request_id}".encode())
                 await self.writer.drain()
-                self.writer.close()
-                await self.writer.wait_closed()
                 log("LoadBalancer", "ScalerClient.poke_scaler", request_id=request_id, status="poked")
         except Exception as e:
             log("LoadBalancer", "ScalerClient.poke_scaler", request_id=request_id, error=str(e))
@@ -106,7 +106,13 @@ app = FastAPI(lifespan=startup_event)
 
 @app.post("/proxy_request/{request_id}")
 async def proxy_request(request: Request, request_id:str):
-    lambda_id = next(iter(available_lambdas))
+    global scaler_client
+    lambda_id=None
+    while not lambda_id:
+        lambda_id = next(iter(available_lambdas))
+        if not lambda_id:
+            await scaler_client.poke_scaler()
+            await asyncio.sleep(0.1)
     lambda_event = lambda_request_events.pop(lambda_id)
     lambda_request_events[request_id]=asyncio.Event()
     lambda_event.set()
@@ -114,18 +120,52 @@ async def proxy_request(request: Request, request_id:str):
     return lambda_request_responses.pop(request_id)
 
 
+@app.post("/register/container")
+async def register_container(request: Request):
+    log("LoadBalancer", "register_container")
+    container_data = await request.json()
+    log("LoadBalancer", "register_container", container_data=container_data)
+
+    container_ip = container_data.get("ip_address")
+    lambda_name = container_data.get("lambda_name")
+
+    if container_ip in lambdas_pending_registration:
+        lambda_ip_container_map[container_ip] = lambda_name
+        event = lambdas_pending_registration.pop(container_ip)
+        if event:
+            event.set()
+
+    return {"status": "accepted"}
+
+    
 
 
 
 # 2. Handle RIE Runtime APIs (Lambda-side)
 @app.get("/{sdk_date}/runtime/invocation/next")
-async def runtime_invocation_next():
+async def runtime_invocation_next(request: Request):
+    global control_plane_db
+    lambda_ip = request.client.host
     log("LoadBalancer", "runtime_invocation_next", status="polling_for_work")
     # Implement long-polling logic here to hand work to containers
-    random_uuid = uuid.uuid4()
-    available_lambdas[random_uuid] = asyncio.Event()
-
-    await available_lambdas[random_uuid].wait()
+    if lambda_ip not in lambda_ip_container_map:
+        lambdas_pending_registration[lambda_ip] = asyncio.Event()
+        while lambda_ip not in lambda_ip_container_map:
+            try:
+                asyncio.wait_for(lambdas_pending_registration[lambda_ip].wait(), timeout=0.1)
+                lambdas_pending_registration[lambda_ip].clear()
+                del lambdas_pending_registration[lambda_ip]
+                break
+            except asyncio.TimeoutError:
+                container = await control_plane_db.get_available_lambda_instance
+                if container:
+                    lambda_ip_container_map[lambda_ip] = container['lambda_name']
+                    lambdas_pending_registration[lambda_ip].clear()
+                    del lambdas_pending_registration[lambda_ip]
+                    break
+    available_lambdas[lambda_ip] = asyncio.Event()
+    await available_lambdas[lambda_ip].wait()
+    
 
     return {"status": "no_work_yet"}
 

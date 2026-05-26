@@ -67,9 +67,6 @@ async def watchdog_loop(processes):
 # Ensure the root directory is in the path for internal imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from internal_dns import run_server as run_dns_server
-from load_balance_lambdas import app
-
 
 async def main():
     db_manager = ControlPlaneDB()

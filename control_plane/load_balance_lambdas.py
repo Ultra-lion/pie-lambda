@@ -117,7 +117,6 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
                     log("LoadBalancer", "proxy_api_call", request_id=request_id, status="scaling_required")
                     scaling_requested = True
                     waiting_room[request_id] = asyncio.Event()
-                    asyncio.create_task(scaler_client.poke_scaler(json.dumps({"request_id":request_id})))
                     try:
                         await asyncio.wait_for(waiting_room[request_id].wait(), timeout=30)
                         log("LoadBalancer", "proxy_api_call", request_id=request_id, status="scaling_completed")

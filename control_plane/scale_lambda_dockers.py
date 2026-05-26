@@ -170,21 +170,26 @@ class LambdaScaler:
         if os.path.exists(socket_path):
             os.remove(socket_path)
         async def handle_poke(reader, writer):
-            data = await reader.read(1024)
-            log("Scaler", "ipc_server.handle_poke", status="received_data")
-            if data:
-                try:
-                    request_data = json.loads(data.decode())
-                    log("Scaler", "ipc_server.handle_poke", payload=request_data)
-                    await self.sync_requests_queue.put(request_data.get("request_id"))
-                    self.IPC_event.set()
-                except Exception as e:
-                    log("Scaler", "ipc_server.handle_poke", error=str(e))
-                    print(f"Error parsing request: {data}")
-            writer.write(b"OK")
-            await writer.drain()
-            writer.close()
-            await writer.wait_closed()
+            try:
+                while True:
+                    data = await reader.read(1024)
+                    log("Scaler", "ipc_server.handle_poke", status="received_data")
+                    try:
+                        log("Scaler", "ipc_server.handle_poke")
+                        self.IPC_event.set()
+                    except Exception as e:
+                        log("Scaler", "ipc_server.handle_poke", error=str(e))
+                        print(f"Error parsing request: {data}")
+                    writer.write(b"OK")
+                    await writer.drain()
+                    writer.close()
+                    await writer.wait_closed()
+            except asyncio.CancelledError:
+                pass
+            finally:
+                writer.close()
+                await writer.wait_closed()
+        
 
         server = await asyncio.start_unix_server(handle_poke, socket_path)
         async with server:
