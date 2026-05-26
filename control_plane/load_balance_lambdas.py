@@ -11,7 +11,6 @@ import os
 import json
 import time
 import datetime
-import multiprocessing
 
 
 from logger_utils import log
@@ -19,9 +18,6 @@ from logger_utils import log
 
 
 control_plane_db = None
-
-waiting_room = {}
-
 
 
 background_tasks = set()
@@ -102,37 +98,10 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
     
     if type == "RequestResponse":
         try:
-            instance=None
-            scaling_requested = False
-            timeout_start = datetime.datetime.now()
-            while not instance:
-                if datetime.datetime.now() - timeout_start > datetime.timedelta(seconds=30):
-                    log("LoadBalancer", "proxy_api_call", request_id=request_id, status="timeout_504")
-                    del waiting_room[request_id]
-                    return 504
-                
-                instance = await control_plane_db.get_available_lambda_instance(request_id, lambda_func_name)
-                
-                if not instance and not scaling_requested:
-                    log("LoadBalancer", "proxy_api_call", request_id=request_id, status="scaling_required")
-                    scaling_requested = True
-                    waiting_room[request_id] = asyncio.Event()
-                    try:
-                        await asyncio.wait_for(waiting_room[request_id].wait(), timeout=30)
-                        log("LoadBalancer", "proxy_api_call", request_id=request_id, status="scaling_completed")
-                        del waiting_room[request_id]
-                        instance = await control_plane_db.get_available_lambda_instance(request_id, lambda_func_name)
-                        break
-                    except asyncio.TimeoutError:
-                        log("LoadBalancer", "proxy_api_call", request_id=request_id, status="scaling_timeout")
-                        pass
-            
-            log("LoadBalancer", "proxy_api_call", request_id=request_id, status="proxying_to_instance", instance_ip=instance['ip_address'], instance_port=instance['port'])
-            
             async with httpx.AsyncClient() as client:
                 response = await client.request(
-                    method=request.method,
-                    url=f"http://{instance['ip_address']}:{instance['port']}",
+                    method="POST",
+                    url=f"http://0.0.0.0:80/proxy_request/{lambda_func_name}/{request_id}",
                     headers=request.headers,
                     params=request.query_params,
                     content=await request.body(),
@@ -141,11 +110,8 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
             log("LoadBalancer", "proxy_api_call", request_id=request_id, status="response_received", response_status=response.status_code)
             await control_plane_db.update_lambda_request(request_id, {"status": "success", "response_data": response.text})
             return response.content
-        finally:
-            if instance:
-                log("LoadBalancer", "proxy_api_call", request_id=request_id, status="marking_instance_available", instance_id=instance['container_id'])
-                await control_plane_db.mark_instance_as_available(instance['container_id'])
-            waiting_room.pop(request_id, None)
+        except Exception as e:
+            raise e
 
     elif type == "Event":
         log("LoadBalancer", "proxy_api_call", request_id=request_id, status="event_type_accepted_202")
