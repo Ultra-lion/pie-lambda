@@ -20,4 +20,7 @@ def run_query(query):
 
 
 run_query("select count(*) from containers;")
+run_query("select * from containers;")
+run_query("select count(*) from requests;")
+run_query("select * from requests;")
 # run_query("delete  from containers;")

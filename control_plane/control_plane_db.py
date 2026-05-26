@@ -239,7 +239,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
         async with self.db_connection() as db:
             await db.execute("""
                 UPDATE requests 
-                SET status = 'failed',
+                SET status = 'failed'
                 WHERE request_id in (
                     SELECT request_id FROM requests 
                     WHERE 

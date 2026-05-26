@@ -223,6 +223,7 @@ class LambdaScaler:
             await server.serve_forever()
     
     async def delete_stuck_requests(self):
+        log("SCALER.RequestHandler","delete_stuck_requests")
         await self.control_plane_db.delete_stuck_requests()
        
     async def scaler_main_process(self):

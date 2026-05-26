@@ -19,7 +19,7 @@ COMPONENT_COMMANDS = {
     "WORKER_MANAGER": [sys.executable, "worker_manager.py"],
     "SCALER": [sys.executable, "scale_lambda_dockers.py"],
     "DNS_SERVER": [sys.executable, "internal_dns.py"],
-    # "EVENTS_HANDLER": [sys.executable, "handle_lambda_events_queue.py"]
+    "EVENTS_HANDLER": [sys.executable, "handle_lambda_events_queue.py"]
 }
 
 def restart_process(name):
