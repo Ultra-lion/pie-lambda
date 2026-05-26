@@ -18,80 +18,13 @@ from logger_utils import log
 
 
 
-class ScalerClient:
-    def __init__(self):
-        self.writer = None
-        self.reader = None
-        self.socket_conn = None
-        self.lock = asyncio.Lock()
-
-    async def initialize(self):
-        log("LoadBalancer", "ScalerClient.initialize", status="waiting_for_socket")
-        while not os.path.exists("/tmp/scaler.sock"):
-            await asyncio.sleep(0.1)
-        self.reader, self.writer = await asyncio.open_unix_connection("/tmp/scaler.sock")
-        log("LoadBalancer", "ScalerClient.initialize", status="connected")
-
-
-    async def poke_scaler(self, request_id):
-        log("LoadBalancer", "ScalerClient.poke_scaler", request_id=request_id)
-        try:
-            async with self.lock:
-                self.writer.write(f"{request_id}".encode())
-                await self.writer.drain()
-                self.writer.close()
-                await self.writer.wait_closed()
-                log("LoadBalancer", "ScalerClient.poke_scaler", request_id=request_id, status="poked")
-        except Exception as e:
-            log("LoadBalancer", "ScalerClient.poke_scaler", request_id=request_id, error=str(e))
-            print(e)
-        
-
 control_plane_db = None
 
 waiting_room = {}
 
-scaler_client = None
-
 
 
 background_tasks = set()
-
-async def ipc_server():
-    socket_path = "/tmp/lb.sock"
-    if os.path.exists(socket_path):
-        os.remove(socket_path)
-    
-    async def handle_poke_back(reader, writer):
-        log("LoadBalancer", "ipc_server.handle_poke_back", status="received_connection")
-        try:
-            data = await reader.readuntil(b"\n")
-            request_data = json.loads(data.decode())
-            log("LoadBalancer", "ipc_server.handle_poke_back", payload=request_data)
-            if request_data.get("type")=="ready":
-                ready_ids = request_data.get("ready_ids")
-                for ready_id in ready_ids:
-                    if ready_id in waiting_room:
-                        log("LoadBalancer", "ipc_server.handle_poke_back", action="release_waiting_room", request_id=ready_id)
-                        waiting_room[ready_id].set()
-                    else:
-                        log("LoadBalancer", "ipc_server.handle_poke_back", action="release_stale_reservation", request_id=ready_id)
-                        asyncio.create_task(control_plane_db.release_stale_reservations(ready_id))
-                        
-
-        except Exception as e:
-            log("LoadBalancer", "ipc_server.handle_poke_back", error=str(e))
-            print(e)
-        finally:
-            await writer.drain()
-            writer.close()
-            await writer.wait_closed()
-
-
-    server = await asyncio.start_unix_server(
-        handle_poke_back,
-        socket_path,
-    )
 
 async def start_heartbeat(component_name):
     db = ControlPlaneDB()
@@ -110,25 +43,13 @@ async def start_heartbeat(component_name):
 async def startup_event(app: FastAPI):
     log("LoadBalancer", "startup_event", status="starting")
     loop = asyncio.get_running_loop()
-    ipc_task = loop.create_task(ipc_server())
-    global scaler_client
-    scaler_client = ScalerClient()
-
-    await scaler_client.initialize()
-
     global control_plane_db
     control_plane_db = ControlPlaneDB()
-
     heartbeat_task = loop.create_task(start_heartbeat("LOAD_BALANCER"))
-
-    ipc_task.add_done_callback(background_tasks.discard)
     heartbeat_task.add_done_callback(background_tasks.discard)
-
     log("LoadBalancer", "startup_event", status="ready")
     yield
-
     log("LoadBalancer", "startup_event", status="shutting_down")
-    ipc_task.cancel()
     heartbeat_task.cancel()
 
 

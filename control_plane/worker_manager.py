@@ -31,6 +31,36 @@ scaler_client = None
 background_tasks = set()
 
 
+class ScalerClient:
+    def __init__(self):
+        self.writer = None
+        self.reader = None
+        self.socket_conn = None
+        self.lock = asyncio.Lock()
+
+    async def initialize(self):
+        log("LoadBalancer", "ScalerClient.initialize", status="waiting_for_socket")
+        while not os.path.exists("/tmp/scaler.sock"):
+            await asyncio.sleep(0.1)
+        self.reader, self.writer = await asyncio.open_unix_connection("/tmp/scaler.sock")
+        log("LoadBalancer", "ScalerClient.initialize", status="connected")
+
+
+    async def poke_scaler(self, request_id):
+        log("LoadBalancer", "ScalerClient.poke_scaler", request_id=request_id)
+        try:
+            async with self.lock:
+                self.writer.write(f"{request_id}".encode())
+                await self.writer.drain()
+                self.writer.close()
+                await self.writer.wait_closed()
+                log("LoadBalancer", "ScalerClient.poke_scaler", request_id=request_id, status="poked")
+        except Exception as e:
+            log("LoadBalancer", "ScalerClient.poke_scaler", request_id=request_id, error=str(e))
+            print(e)
+        
+
+
 async def start_heartbeat(component_name):
     db = ControlPlaneDB()
     pid = os.getpid()
@@ -48,6 +78,12 @@ async def start_heartbeat(component_name):
 async def startup_event(app: FastAPI):
     log("WORKER_MANAGER", "startup_event", status="starting")
     loop = asyncio.get_running_loop()
+
+    global scaler_client
+    scaler_client = ScalerClient()
+
+    await scaler_client.initialize()
+
 
     global control_plane_db
     control_plane_db = ControlPlaneDB()

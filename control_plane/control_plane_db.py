@@ -51,7 +51,6 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                 container_id TEXT PRIMARY KEY,
                 lambda_name TEXT NOT NULL,
                 ip_address TEXT NOT NULL,
-                reserved_for_request TEXT,
                 port INTEGER NOT NULL,
                 status TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -119,19 +118,17 @@ class ControlPlaneDB(metaclass=SingletonMeta):
             log("ControlPlaneDB", "create_provisioning_container", lambda_name=lambda_name, container_id=result[0])
             return result[0]
 
-    async def add_lambda_deployed_instances(self, lambda_name, container_id, ip_address, reserved_for_request=None, provisioning_row_id=None):
-        log("ControlPlaneDB", "add_lambda_deployed_instances", lambda_name=lambda_name, container_id=container_id, ip=ip_address, reserved=reserved_for_request)
+    async def add_lambda_deployed_instances(self, lambda_name, container_id, ip_address,provisioning_row_id=None):
+        log("ControlPlaneDB", "add_lambda_deployed_instances", lambda_name=lambda_name, container_id=container_id, ip=ip_address)
         status="available"
-        if reserved_for_request:
-            status="reserved"
         if provisioning_row_id:
             async with self.db_connection() as db:
-                await db.execute("UPDATE containers SET container_id = ?, ip_address = ?, status = ?, reserved_for_request = ? WHERE container_id = ?", (container_id, ip_address, status, reserved_for_request, provisioning_row_id)) 
+                await db.execute("UPDATE containers SET container_id = ?, ip_address = ?, status = ? WHERE container_id = ?", (container_id, ip_address, status, provisioning_row_id)) 
                 await db.commit()
                 log("ControlPlaneDB", "add_lambda_deployed_instances", status="updated_existing", provisioning_row_id=provisioning_row_id)
         else:
             async with self.db_connection() as db:
-                await db.execute("INSERT INTO containers (lambda_name, container_id, ip_address, port, status, reserved_for_request) VALUES (?, ?, ?, ?, ?, ?)", (lambda_name, container_id, ip_address, status, reserved_for_request)) 
+                await db.execute("INSERT INTO containers (lambda_name, container_id, ip_address, port, status) VALUES (?, ?, ?, ?, ?)", (lambda_name, container_id, ip_address, status)) 
                 await db.commit()
                 log("ControlPlaneDB", "add_lambda_deployed_instances", status="inserted_new")
 

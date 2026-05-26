@@ -18,8 +18,6 @@ class LambdaScaler:
         self.individual_lambda_scale_limit = individual_lambda_scale_limit
         self.control_plane_db = ControlPlaneDB()
         self.IPC_event = asyncio.Event()
-        self.sync_requests_queue = asyncio.Queue()
-        self.poke_back_queue = asyncio.Queue()
         self.loop = None
         self.docker_sdk_check_time = None
         self.ca_path = config.get("ca_path")
@@ -37,10 +35,10 @@ class LambdaScaler:
         container_id = uuid.uuid4()
         return f"lambda-{lambda_func_name}-{container_id}"
 
-    def scale_up_lambda(self, lambda_func_name, request_id_to_reserve_for=None):
+    def scale_up_lambda(self, lambda_func_name):
         container_id = self.generate_container_name(lambda_func_name)
-        log("Scaler", "scale_up_lambda", lambda_name=lambda_func_name, reserved_for=request_id_to_reserve_for)
-        provisioning_row_id_future = asyncio.run_coroutine_threadsafe(self.control_plane_db.create_provisioning_container(lambda_func_name, request_id_to_reserve_for, container_id), self.loop)
+        log("Scaler", "scale_up_lambda", lambda_name=lambda_func_name)
+        provisioning_row_id_future = asyncio.run_coroutine_threadsafe(self.control_plane_db.create_provisioning_container(lambda_func_name, container_id), self.loop)
         provisioning_row_id = provisioning_row_id_future.result()
         log("Scaler", "scale_up_lambda", status="row_created", provisioning_id=provisioning_row_id)
         control_plane_ip = get_local_ip()
@@ -64,13 +62,10 @@ class LambdaScaler:
             self.control_plane_db.add_lambda_deployed_instances(
                 container.id, 
                 container.attrs['NetworkSettings']["Networks"][BASE_NETWORK_BRIDGE]["IPAddress"], 
-                request_id_to_reserve_for,
                 provisioning_row_id
                 ),
                 self.loop)
         future.result()
-        if request_id_to_reserve_for:
-            self.loop.call_soon_threadsafe(self.poke_back_queue.put_nowait, request_id_to_reserve_for)
 
     def scale_down_lambda(self, lambda_func_name, container_id):
         log("Scaler", "scale_down_lambda", lambda_name=lambda_func_name, container_id=container_id)
@@ -87,8 +82,8 @@ class LambdaScaler:
             log("Scaler", "scale_down_lambda", container_id=container_id, status="remove_failed", error=str(e))
             pass
 
-    def provision_container(self, lambda_func_name, request_id_to_reserve_for=None):        
-        self.scale_up_lambda(lambda_func_name, request_id_to_reserve_for)
+    def provision_container(self, lambda_func_name):        
+        self.scale_up_lambda(lambda_func_name)
     
 
     async def scaler_thread_loop(self):
@@ -98,30 +93,18 @@ class LambdaScaler:
             log("Scaler", "scaler_thread_loop", request_count=len(scale_up_requests))
             scale_thread_tasks = []
             for scale_up_request in scale_up_requests:
-                request_id_to_reserve_for = None
-                try:
-                    request_id_to_reserve_for = self.sync_requests_queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    pass
 
                 lambda_func_name = scale_up_request.get("lambda_name") # Fixed key from lambda_func_name to lambda_name
                 required_containers = scale_up_request.get("required_containers")
                 
-                log("Scaler", "scaler_thread_loop", lambda_name=lambda_func_name, required=required_containers, reserved_id=request_id_to_reserve_for)
+                log("Scaler", "scaler_thread_loop", lambda_name=lambda_func_name, required=required_containers)
                 
                 for _ in range(required_containers):
-                    scale_thread_tasks.append(asyncio.to_thread(self.provision_container, lambda_func_name, request_id_to_reserve_for))
+                    scale_thread_tasks.append(asyncio.to_thread(self.provision_container, lambda_func_name))
             
             await asyncio.gather(*scale_thread_tasks)
             log("Scaler", "scaler_thread_loop", status="provisioning_batch_complete")
-        
-        
-        ready_ids = []
-        while not self.poke_back_queue.empty():
-            ready_ids.append(self.poke_back_queue.get_nowait())
-        if ready_ids:
-            log("Scaler", "scaler_thread_loop", status="poking_lb", ready_ids=ready_ids)
-            await self.poke_lb(ready_ids)
+       
     
     def get_docker_containers(self):
         return self.docker_client.containers.list()
@@ -181,21 +164,6 @@ class LambdaScaler:
             log("Scaler", "reaper_thread_loop", status="reaping_complete", count=len(destroyed_ids))
         else:
             log("Scaler", "reaper_thread_loop", status="no_containers_to_reap")
-
-    async def poke_lb(self, ready_ids):
-        if not ready_ids:
-            return
-
-        lb_socket_path = "/tmp/lb.sock"
-        try:
-            reader, writer = await asyncio.open_unix_connection(lb_socket_path)
-            payload = json.dumps({"type":"ready", "ready_ids": ready_ids})
-            writer.write(payload.encode()+b"\n")
-            await writer.drain()
-            writer.close()
-            await writer.wait_closed()
-        except Exception as e:
-            print(f"Error poking LB: {e}")
             
     async def ipc_server(self):
         socket_path = "/tmp/scaler.sock"
