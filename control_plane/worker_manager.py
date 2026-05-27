@@ -167,14 +167,15 @@ async def runtime_invocation_next(request: Request):
         try:
             while lambda_ip not in registered_lambdas:
                 if await request.is_disconnected():
+                    log("WorkerManager", "registration", status="disconnected", ip=lambda_ip)
                     return None
                 try:
-                    asyncio.wait_for(lambdas_pending_registration[lambda_ip].wait(), timeout=0.1)
+                    await asyncio.wait_for(lambdas_pending_registration[lambda_ip].wait(), timeout=0.1)
                     lambdas_pending_registration[lambda_ip].clear()
                     del lambdas_pending_registration[lambda_ip]
                     break
                 except asyncio.TimeoutError:
-                    container = await control_plane_db.get_available_lambda_instance
+                    container = await control_plane_db.get_lambda_container_by_ip(lambda_ip)
                     if container:
                         registered_lambdas[lambda_ip] = container['lambda_name']
                         lambdas_pending_registration[lambda_ip].clear()
@@ -184,7 +185,6 @@ async def runtime_invocation_next(request: Request):
             log("LoadBalancer", "runtime_invocation_next", error=str(e))
         finally:
             lambdas_pending_registration.pop(lambda_ip, None)
-            registered_lambdas.pop(lambda_ip, None)
 
     lambda_name = registered_lambdas[lambda_ip]
     if lambda_name not in available_lambdas:
@@ -195,6 +195,7 @@ async def runtime_invocation_next(request: Request):
         while True:
             # cleanup loop if a lambda disconnects
             if await request.is_disconnected():
+                log("WorkerManager", "polling", status="disconnected", ip=lambda_ip)
                 available_lambdas[lambda_name].pop(lambda_ip, None)
                 registered_lambdas.pop(lambda_ip, None)
                 lambda_request_events.pop(lambda_ip, None)
@@ -202,9 +203,8 @@ async def runtime_invocation_next(request: Request):
                 lambda_request_responses.pop(lambda_ip, None)
                 return None
 
-
             try:
-                asyncio.wait_for(available_lambdas[lambda_name][lambda_ip].wait(), timeout=0.5)
+                await asyncio.wait_for(available_lambdas[lambda_name][lambda_ip].wait(), timeout=0.5)
                 break
             except asyncio.TimeoutError:
                 continue

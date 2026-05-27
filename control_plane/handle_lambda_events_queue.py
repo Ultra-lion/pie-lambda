@@ -2,7 +2,6 @@
 import httpx
 from control_plane_db import ControlPlaneDB
 import asyncio
-import httpx
 import asyncio
 import os
 from logger_utils import log

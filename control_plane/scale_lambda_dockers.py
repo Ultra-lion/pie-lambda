@@ -3,9 +3,10 @@ import asyncio
 import docker
 import asyncio
 import os
-import json 
+import time 
 from datetime import datetime, timedelta
 import uuid
+import httpx
 
 from control_plane_db import ControlPlaneDB
 from logger_utils import log
@@ -57,15 +58,41 @@ class LambdaScaler:
             }
         )
         log("Scaler", "scale_up_lambda", status="container_started", container_id=container.id)
-        container.reload()
+        container_ip = None
+
+        while not container_ip:
+            container.reload()
+            try:
+                container_ip = container.attrs['NetworkSettings']["Networks"][BASE_NETWORK_BRIDGE]["IPAddress"]
+            except Exception as e:
+                log("Scaler", "scale_up_lambda", container_ip=container_ip)
+            time.sleep(0.1)
+
+
         future = asyncio.run_coroutine_threadsafe(
             self.control_plane_db.add_lambda_deployed_instances(
                 container.id, 
-                container.attrs['NetworkSettings']["Networks"][BASE_NETWORK_BRIDGE]["IPAddress"], 
+                container_ip, 
                 provisioning_row_id
                 ),
                 self.loop)
         future.result()
+
+        async def register_lambda():
+            async with httpx.AsyncClient() as client:
+                response = await client.request(
+                    method="POST",
+                    url=f"http://0.0.0.0:80/register/container",
+                    headers={},
+                    params={},
+                    content={
+                        "ip_address":container_ip,
+                        "lambda_name":lambda_func_name
+                    },
+                )
+        self.loop.create_task(register_lambda())
+
+
 
     def scale_down_lambda(self, lambda_func_name, container_id):
         log("Scaler", "scale_down_lambda", lambda_name=lambda_func_name, container_id=container_id)
