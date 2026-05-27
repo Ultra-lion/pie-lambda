@@ -94,6 +94,10 @@ def build_docker_network():
     
 
 def setup_docker_network_bridge():
+    docker_networks = client.networks.list()
+    for network in docker_networks:
+        if network.name == BASE_NETWORK_BRIDGE:
+            return
     build_docker_network()
 
 def build_control_plane_docker():
