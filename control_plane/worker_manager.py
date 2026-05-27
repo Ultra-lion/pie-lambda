@@ -106,12 +106,13 @@ app = FastAPI(lifespan=startup_event)
 
 
 
-@app.post("/proxy_request/{lambda_name}/{request_id}", time)
+@app.post("/proxy_request/{lambda_name}/{request_id}")
 async def proxy_request(request: Request, request_id:str, lambda_name:str):
     global scaler_client
-    available_lambda_ip, available_lambda_event=None
+    available_lambda_ip = None
+    available_lambda_event=None
     while not available_lambda_ip:
-        available_lambda_ip = next(iter(available_lambdas.get(lambda_name,{})))
+        available_lambda_ip = next(iter(available_lambdas.get(lambda_name,{})),None)
         if not available_lambda_ip:
             await scaler_client.poke_scaler()
             await asyncio.sleep(0.1)
@@ -163,27 +164,58 @@ async def runtime_invocation_next(request: Request):
     # Implement long-polling logic here to hand work to containers
     if lambda_ip not in registered_lambdas:
         lambdas_pending_registration[lambda_ip] = asyncio.Event()
-        while lambda_ip not in registered_lambdas:
-            try:
-                asyncio.wait_for(lambdas_pending_registration[lambda_ip].wait(), timeout=0.1)
-                lambdas_pending_registration[lambda_ip].clear()
-                del lambdas_pending_registration[lambda_ip]
-                break
-            except asyncio.TimeoutError:
-                container = await control_plane_db.get_available_lambda_instance
-                if container:
-                    registered_lambdas[lambda_ip] = container['lambda_name']
+        try:
+            while lambda_ip not in registered_lambdas:
+                if await request.is_disconnected():
+                    return None
+                try:
+                    asyncio.wait_for(lambdas_pending_registration[lambda_ip].wait(), timeout=0.1)
                     lambdas_pending_registration[lambda_ip].clear()
                     del lambdas_pending_registration[lambda_ip]
                     break
+                except asyncio.TimeoutError:
+                    container = await control_plane_db.get_available_lambda_instance
+                    if container:
+                        registered_lambdas[lambda_ip] = container['lambda_name']
+                        lambdas_pending_registration[lambda_ip].clear()
+                        del lambdas_pending_registration[lambda_ip]
+                        break
+        except Exception as e:
+            log("LoadBalancer", "runtime_invocation_next", error=str(e))
+        finally:
+            lambdas_pending_registration.pop(lambda_ip, None)
+            registered_lambdas.pop(lambda_ip, None)
+
     lambda_name = registered_lambdas[lambda_ip]
     if lambda_name not in available_lambdas:
         available_lambdas[lambda_name]={}
     available_lambdas[lambda_name][lambda_ip] = asyncio.Event()
 
-    await available_lambdas[lambda_name][lambda_ip].wait()
+    try:
+        while True:
+            # cleanup loop if a lambda disconnects
+            if await request.is_disconnected():
+                available_lambdas[lambda_name].pop(lambda_ip, None)
+                registered_lambdas.pop(lambda_ip, None)
+                lambda_request_events.pop(lambda_ip, None)
+                lambda_request_payloads.pop(lambda_ip, None)
+                lambda_request_responses.pop(lambda_ip, None)
+                return None
 
-    lambda_payload = lambda_request_payloads.get(lambda_ip)
+
+            try:
+                asyncio.wait_for(available_lambdas[lambda_name][lambda_ip].wait(), timeout=0.5)
+                break
+            except asyncio.TimeoutError:
+                continue
+
+    except Exception as e:
+        return None
+    finally:
+        lambda_request_payloads.pop(lambda_ip, None)
+        available_lambdas[lambda_name].pop(lambda_ip, None)
+
+    lambda_payload = lambda_request_payloads.pop(lambda_ip,None)
 
     return lambda_payload
 
