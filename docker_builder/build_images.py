@@ -194,11 +194,24 @@ def teardown(config:dict):
                 break
     
     for container in matching_containers:
-        container.stop()
-        container.remove()
+        try:
+            container.reload()
+            if container.status == "running":
+                container.stop(timeout=2)
+            
+        except Exception as e:
+            print(f"Could Not stop container {container.name} Error: {e}")
+
+        try:
+            container.remove(force=True)
+        except Exception as e:
+            print(f"Could Not remove container {container.name} Error: {e}")
     
     for image in matching_images:
-        image.remove()
+        try:
+            image.remove(force=True)
+        except Exception as e:
+            print(f"Could Not remove image {image.tags} Error: {e}")
     
     try:
 
