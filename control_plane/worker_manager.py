@@ -41,25 +41,52 @@ class ScalerClient:
         self.reader = None
         self.socket_conn = None
         self.lock = asyncio.Lock()
+        self.initializing = False
+        self.available = False
 
     async def initialize(self):
-        log("LoadBalancer", "ScalerClient.initialize", status="waiting_for_socket")
-        while not os.path.exists("/tmp/scaler.sock"):
-            await asyncio.sleep(0.1)
-        self.reader, self.writer = await asyncio.open_unix_connection("/tmp/scaler.sock")
-        log("LoadBalancer", "ScalerClient.initialize", status="connected")
+        if self.initializing:
+            return
+        self.initializing = True
+        try:
+            log("LoadBalancer", "ScalerClient.initialize", status="waiting_for_socket")
+            while not os.path.exists("/tmp/scaler.sock"):
+                await asyncio.sleep(0.1)
+            
+            async with self.lock:
+                try:
+                    if self.writer:
+                        try:
+                            self.writer.close()
+                            await self.writer.wait_closed()
+                        except Exception:
+                            pass
+                    
+                    self.reader, self.writer = await asyncio.open_unix_connection("/tmp/scaler.sock")
+                    log("LoadBalancer", "ScalerClient.initialize", status="connected")
+                    self.available = True
+                except Exception as e:
+                    log("LoadBalancer", "ScalerClient.initialize", status="failed", error=str(e))
+                    self.available = False
+        finally:
+            self.initializing = False
 
-
-    async def poke_scaler(self, request_id):
+    async def poke_scaler(self):
+        if not self.available or not self.writer:
+            asyncio.create_task(self.initialize())
+            return
+        
         log("LoadBalancer", "ScalerClient.poke_scaler", request_id=request_id)
         try:
             async with self.lock:
-                self.writer.write(f"{request_id}".encode())
+                self.writer.write("scale pls".encode())
                 await self.writer.drain()
-                log("LoadBalancer", "ScalerClient.poke_scaler", request_id=request_id, status="poked")
+                log("LoadBalancer", "ScalerClient.poke_scaler", status="poked")
         except Exception as e:
-            log("LoadBalancer", "ScalerClient.poke_scaler", request_id=request_id, error=str(e))
-            print(e)
+            log("LoadBalancer", "ScalerClient.poke_scaler", error=str(e))
+            self.available=False
+            self.writer = None
+            asyncio.create_task(self.initialize())
         
 
 
