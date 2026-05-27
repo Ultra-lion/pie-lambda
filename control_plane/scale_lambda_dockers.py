@@ -72,6 +72,7 @@ class LambdaScaler:
 
         future = asyncio.run_coroutine_threadsafe(
             self.control_plane_db.add_lambda_deployed_instances(
+                lambda_func_name,
                 container.id, 
                 container_ip, 
                 provisioning_row_id

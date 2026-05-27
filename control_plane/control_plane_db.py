@@ -109,10 +109,10 @@ class ControlPlaneDB(metaclass=SingletonMeta):
             log("ControlPlaneDB", "count_deployed_lambda_instance", lambda_name=lambda_name, count=count)
             return count
     
-    async def create_provisioning_container(self, lambda_name, request_id, container_id):
-        log("ControlPlaneDB", "create_provisioning_container", lambda_name=lambda_name, request_id=request_id)
+    async def create_provisioning_container(self, lambda_name, container_id):
+        log("ControlPlaneDB", "create_provisioning_container", lambda_name=lambda_name)
         async with self.db_connection() as db:
-            res = await db.execute("INSERT INTO containers (lambda_name, container_id, ip_address, port, status, reserved_for_request) VALUES (?, ?, ?, ?, ?, ?) RETURNING container_id", (lambda_name, container_id, "test", "test", "test", None)) 
+            res = await db.execute("INSERT INTO containers (lambda_name, container_id, ip_address, port, status) VALUES (?, ?, ?, ?, ?, ?) RETURNING container_id", (lambda_name, container_id, "test", "test", None)) 
             result = await res.fetchone()
             await db.commit()
             log("ControlPlaneDB", "create_provisioning_container", lambda_name=lambda_name, container_id=result[0])
@@ -253,79 +253,6 @@ class ControlPlaneDB(metaclass=SingletonMeta):
             res = await cursor.fetchall()
             log("ControlPlaneDB", "get_all_containers", result_count=len(res))
             return res
-    
-    async def get_available_lambda_instance(self, request_id, lambda_func_name):
-        log("ControlPlaneDB", "get_available_lambda_instance", request_id=request_id, lambda_name=lambda_func_name)
-        async with self.db_connection() as db:
-            res = await db.execute("""
-            UPDATE containers 
-            SET status = 'busy', 
-                last_used_at = CURRENT_TIMESTAMP 
-            WHERE container_id = (
-                SELECT container_id FROM containers 
-                WHERE (reserved_for_request = ? OR status = 'available')
-                AND lambda_name = ?
-                ORDER BY (reserved_for_request = ?) DESC, created_at ASC
-                LIMIT 1
-            )
-            RETURNING *;
-            """, (request_id, lambda_func_name, request_id))
-            instance = await res.fetchone()
-            if instance:
-                log("ControlPlaneDB", "get_available_lambda_instance", status="found", instance_id=instance['container_id'])
-            else:
-                log("ControlPlaneDB", "get_available_lambda_instance", status="not_found")
-            return instance
-    
-    async def get_available_lambda_instance_for_assignment(self, events):
-        log("ControlPlaneDB", "get_available_lambda_instance_for_assignment", event_count=len(events))
-        # 1. Group events by lambda_name
-        events_by_lambda = {}
-        for event in events:
-            # Note: you used event.lambda_name but it's a dict/Row right? 
-            # If it's a dictionary/row use event['lambda_name'], else event.lambda_name
-            l_name = event['lambda_name'] 
-            if l_name not in events_by_lambda:
-                events_by_lambda[l_name] = []
-            events_by_lambda[l_name].append(event)
-            
-        assigned_containers = {}
-
-        async with self.db_connection() as db:
-            # 2. Process each lambda cluster atomically
-            for lambda_name, lambda_events in events_by_lambda.items():
-                required_count = len(lambda_events)
-                log("ControlPlaneDB", "get_available_lambda_instance_for_assignment", subtask="claiming", lambda_name=lambda_name, count=required_count)
-                
-                # claim up to 'required_count' containers
-                res = await db.execute("""
-                    UPDATE containers 
-                    SET status = 'busy', 
-                        last_used_at = CURRENT_TIMESTAMP 
-                    WHERE container_id IN (
-                        SELECT container_id FROM containers 
-                        WHERE status = 'available' 
-                        AND lambda_name = ?
-                        ORDER BY created_at ASC
-                        LIMIT ?
-                    )
-                    RETURNING *;
-                """, (lambda_name, required_count))
-                
-                claimed_rows = await res.fetchall()
-                log("ControlPlaneDB", "get_available_lambda_instance_for_assignment", subtask="claimed", lambda_name=lambda_name, count=len(claimed_rows))
-                
-                # 3. Pair them! (Up to the amount we successfully claimed)
-                for i, container_row in enumerate(claimed_rows):
-                    matched_event = lambda_events[i]
-                    # Map the request_id to the container dict/row
-                    assigned_containers[matched_event['request_id']] = container_row
-                    
-            await db.commit()
-            
-        # Returns a dict: { request_id: container_row }
-        log("ControlPlaneDB", "get_available_lambda_instance_for_assignment", total_assigned=len(assigned_containers))
-        return assigned_containers
     
     async def get_lambda_container_by_ip(self, ip):
         log("ControlPlaneDB", "get_lambda_container_by_ip", ip=ip)
