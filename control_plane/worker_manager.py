@@ -76,7 +76,7 @@ class ScalerClient:
             asyncio.create_task(self.initialize())
             return
         
-        log("LoadBalancer", "ScalerClient.poke_scaler", request_id=request_id)
+        log("LoadBalancer", "ScalerClient.poke_scaler")
         try:
             async with self.lock:
                 self.writer.write("scale pls".encode())
