@@ -138,6 +138,10 @@ def deploy_control_plane_docker(config:dict):
     
     ca_path = os.path.abspath("certs")
     control_plane_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "control_plane"))
+    
+    ca_cert_file = os.path.join(ca_path, "ca.crt")
+    server_cert_file = os.path.join(ca_path, "server.crt")
+    server_key_file = os.path.join(ca_path, "server.key")
 
     volumes = {
         host_socket:{
@@ -148,11 +152,18 @@ def deploy_control_plane_docker(config:dict):
             'bind':'/app/control_plane',
             'mode':'rw'
         },
-        ca_path:{
+        ca_cert_file:{
             'bind':'/etc/ssl/certs/ca.crt',
             'mode':'ro'
+        },
+        server_cert_file:{
+            'bind':'/app/control_plane/server.crt',
+            'mode':'ro'
+        },
+        server_key_file:{
+            'bind':'/app/control_plane/server.key',
+            'mode':'ro'
         }
-        
     }
     
     client.containers.run(
