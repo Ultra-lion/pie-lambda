@@ -55,7 +55,8 @@ class LambdaScaler:
             environment={
                 "AWS_LAMBDA_RUNTIME_API": f"{control_plane_ip}",
                 "LAMBDA_FUNC_NAME": lambda_func_name
-            }
+            },
+            extra_hosts={"host.docker.internal": "host-gateway"}
         )
         log("Scaler", "scale_up_lambda", status="container_started", container_id=container.id)
         container_ip = None

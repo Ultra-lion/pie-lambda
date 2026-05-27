@@ -1,5 +1,6 @@
 from dnslib import DNSRecord, QTYPE, RR, A
 from dnslib.server import DNSServer, BaseResolver
+import socketserver
 import re
 import socket 
 import struct
@@ -54,36 +55,33 @@ class HybridResolver(BaseResolver):
         qname = str(request.q.qname)
         qtype = QTYPE[request.q.qtype]
         
-        print("in hea resolv")
-
-
-        if (
-            (
-            qname not in self.user_config.get('docker_bridge_network_exclude_ips',[])
-            or qname in self.user_config.get('docker_bridge_network_include_ips',[])
-            or self.is_intercepted_domain(qname)
-            )
-            ):
+        # 0. Host Gateway Resolution
+        # Automatically resolve special hostnames to the gateway IP (detected in __init__).
+        # This allows users to reach host services (DBs, etc) without knowing the IP.
+        if qtype == 'A' and qname.strip('.') in ['host.docker.internal', 'pie-lambda.local', 'host.pie-lambda.local']:
+            print(f"!!! RESOLVING HOST GATEWAY: {qname} -> {self.host_dns}")
             reply = request.reply()
-            if qtype == 'A':
-                if self.is_intercepted_domain(qname):
-                    print(f"!!! INTERCEPTING A: {qname}")
-                    reply.add_answer(RR(qname, QTYPE.A, rdata=A(self.control_plane_ip)))
-                    return reply
-                else:
-                    reply.add_answer(RR(qname, QTYPE.A, rdata=A(self.docker_dns)))
-                    return reply
-            else:
-                print(f"!!! INTERCEPTING {qtype} (returning empty): {qname}")
-                return reply 
+            reply.add_answer(RR(qname, QTYPE.A, rdata=A(self.host_dns)))
+            return reply
 
-        if qname.count('.')<=1 or '.internal' in qname or '.local' in qname:
-            reply = self.forward_query(request,self.docker_dns)
-            if reply and reply.rr:
-                print(f"[DOCKER NETWORK] Resolved {qname} via embedded DNS")
-                return reply
+        # 1. Local Interception: AWS Lambda API calls
+        # If the domain matches our interception pattern, point it to our Control Plane IP.
+        if qtype == 'A' and self.is_intercepted_domain(qname):
+            print(f"!!! INTERCEPTING A: {qname}")
+            reply = request.reply()
+            reply.add_answer(RR(qname, QTYPE.A, rdata=A(self.control_plane_ip)))
+            return reply
+
+        # 2. Primary Resolver: Docker DNS (127.0.0.11)
+        # This handles container names and automatically recurses to the host's DNS.
+        reply = self.forward_query(request, self.docker_dns)
+        if reply and reply.rr:
+            print(f"[DNS] {qname} resolved via Docker DNS")
+            return reply
         
-        print(f"[Outbound Route] Forwarding {qname} to Host Machine")
+        # 3. Fallback: Host DNS
+        # Only used if Docker DNS fails to provide an answer.
+        print(f"[DNS] Falling back to Host Machine DNS for {qname}")
         reply = self.forward_query(request, self.host_dns)
         if reply:
             return reply
@@ -111,7 +109,11 @@ async def start_heartbeat(component_name):
 async def run_server(config:dict):
     asyncio.create_task(start_heartbeat("DNS_SERVER"))
     resolver = HybridResolver(config)
-    server = DNSServer(resolver, port=53, address="0.0.0.0")
+    # Using ThreadingUDPServer allows the DNS server to handle multiple 
+    # requests concurrently. Each request will run in its own thread, 
+    # so a blocking 'forward_query' won't freeze the whole server.
+    server = DNSServer(resolver, port=53, address="0.0.0.0", server=socketserver.ThreadingUDPServer)
+    
     await asyncio.to_thread(server.start)
     print("oi")
 
