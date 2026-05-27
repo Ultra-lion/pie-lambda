@@ -112,7 +112,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
     async def create_provisioning_container(self, lambda_name, container_id):
         log("ControlPlaneDB", "create_provisioning_container", lambda_name=lambda_name)
         async with self.db_connection() as db:
-            res = await db.execute("INSERT INTO containers (lambda_name, container_id, ip_address, port, status) VALUES (?, ?, ?, ?, ?, ?) RETURNING container_id", (lambda_name, container_id, "test", "test", None)) 
+            res = await db.execute("INSERT INTO containers (lambda_name, container_id, ip_address, port, status) VALUES (?, ?, ?, ?, ?) RETURNING container_id", (lambda_name, container_id, "test", "test", None)) 
             result = await res.fetchone()
             await db.commit()
             log("ControlPlaneDB", "create_provisioning_container", lambda_name=lambda_name, container_id=result[0])
@@ -320,7 +320,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
     async def get_enqueued_events(self):
         log("ControlPlaneDB", "get_enqueued_events")
         async with self.db_connection() as db:
-            result = await db.execute(f"SELECT * FROM requests WHERE status = 'pending' and event_type = 'event' limit {self.individual_lambda_scale_limit}")
+            result = await db.execute(f"SELECT * FROM requests WHERE status = 'pending' and event_type = 'Event' limit {self.individual_lambda_scale_limit}")
             res = await result.fetchall()
             log("ControlPlaneDB", "get_enqueued_events", result_count=len(res))
             return res
