@@ -80,17 +80,14 @@ class LambdaScaler:
 
         async def register_lambda():
             async with httpx.AsyncClient() as client:
-                response = await client.request(
-                    method="POST",
-                    url=f"http://0.0.0.0:80/register/container",
-                    headers={},
-                    params={},
-                    content={
+                await client.post(
+                    "http://0.0.0.0:80/register/container",
+                    json={
                         "ip_address":container_ip,
                         "lambda_name":lambda_func_name
                     },
                 )
-        self.loop.create_task(register_lambda())
+        asyncio.run_coroutine_threadsafe(register_lambda(), self.loop)
 
 
 
