@@ -137,13 +137,14 @@ def deploy_control_plane_docker(config:dict):
     host_socket = get_host_docker_socket()
     
     ca_path = os.path.abspath("certs")
+    control_plane_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "control_plane"))
 
     volumes = {
         host_socket:{
             'bind':'/var/run/docker.sock',
             'mode':'rw'
         },
-        "/home/rohan/Desktop/FUN-Projects/pie-lambda/control_plane":{
+        control_plane_path:{
             'bind':'/app/control_plane',
             'mode':'rw'
         },
