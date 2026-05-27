@@ -35,8 +35,8 @@ def restart_process(name):
 
 
 
-WATCHDOG_LOOP_TIME = 100
-PROCESS_KILL_TIME = 1000
+WATCHDOG_LOOP_TIME = 1
+PROCESS_KILL_TIME = 1
 
 async def watchdog_loop(processes):
     db = ControlPlaneDB()

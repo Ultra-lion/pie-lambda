@@ -182,7 +182,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
             OR 
                 (status = 'busy' AND COALESCE(last_used_at, created_at) < datetime('now', '-30 minutes'))
             OR 
-                (status = 'reserved' AND COALESCE(last_used_at, created_at) < datetime('now', '-1 minutes'))
+                (status = 'provisioning' AND COALESCE(last_used_at, created_at) < datetime('now', '-1 minutes'))
             )
             RETURNING *;
             """)
@@ -347,7 +347,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
             ORDER BY MAX(priority) DESC, MIN(created_at) ASC;
             """)
             pending_requests = await res_requests.fetchall()
-            res_counts = await db.execute("SELECT lambda_name, status, COUNT(*) as container_count FROM containers WHERE status in ('available','provisioning', 'reserved', 'busy') GROUP BY lambda_name, status")
+            res_counts = await db.execute("SELECT lambda_name, status, COUNT(*) as container_count FROM containers WHERE status in ('available','provisioning', 'busy') GROUP BY lambda_name, status")
             containers_counts = await res_counts.fetchall()
             
             stats = {}
