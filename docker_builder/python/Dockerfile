@@ -28,7 +28,7 @@ RUN if [ -f requirements.txt ]; then \
     fi
 
 # This is the key! We hijack the start-up sequence
-ENTRYPOINT ${LAMBDA_TASK_ROOT}/bootstrap.sh
+ENTRYPOINT ["/bin/bash", "/var/task/bootstrap.sh"]
 
 # The handler is resolved by bootstrap.sh using ENV vars, so we pass an empty CMD
 CMD []

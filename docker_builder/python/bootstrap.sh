@@ -13,8 +13,8 @@ if [ ! -f /var/task/__init__.py ]; then
 fi
 
 # Create a symlink so python can find the package by its real name
-if [ ! -L "/var/${LAMBDA_FUNC_NAME}" ]; then
-  ln -s /var/task "/var/${LAMBDA_FUNC_NAME}"
+if [ ! -L "/var/${LAMBDA_FUNC_NAME}" ] && [ -w "/var" ]; then
+  ln -s /var/task "/var/${LAMBDA_FUNC_NAME}" || echo "Warning: Could not create symlink"
 fi
 
 # Ensure /var is in PYTHONPATH without creating leading/trailing colons
@@ -47,4 +47,5 @@ if [ -z "$PYTHON_BIN" ]; then
   exit 1
 fi
 
-exec "$PYTHON_BIN" -m awslambdaric "$NEW_HANDLER" "$@"
+# exec "$PYTHON_BIN" -m awslambdaric "$NEW_HANDLER" "$@"
+exec /lambda-entrypoint.sh "$NEW_HANDLER" "$@"
