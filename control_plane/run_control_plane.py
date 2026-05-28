@@ -115,7 +115,7 @@ async def main():
     
     if not all_ready:
         raise Exception("Control plane components are not healthy after startup time limit")
-    
+    print("EVERYTHING READY")
     # 4. Start the Watchdog (Async - happens on the MAIN loop)
     # This blocks forever and keeps the loop alive
     try:

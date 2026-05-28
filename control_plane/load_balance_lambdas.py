@@ -104,10 +104,11 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
             async with httpx.AsyncClient() as client:
                 response = await client.request(
                     method="POST",
-                    url=f"http://0.0.0.0:80/proxy_request/{lambda_func_name}/{request_id}",
+                    url=f"http://127.0.0.1:80/proxy_request/{lambda_func_name}/{request_id}",
                     headers=request.headers,
                     params=request.query_params,
                     content=await request.body(),
+                    timeout=60
                 )
             
             log("LoadBalancer", "proxy_api_call", request_id=request_id, status="response_received", response_status=response.status_code)

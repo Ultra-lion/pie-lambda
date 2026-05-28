@@ -28,10 +28,11 @@ class LambdaQueueHandler:
             async with httpx.AsyncClient() as client:
                 response = await client.request(
                     method="POST",
-                    url=f"http://0.0.0.0:80/proxy_request/{lamdba_name}/{request_id}",
+                    url=f"http://127.0.0.1:80/proxy_request/{lamdba_name}/{request_id}",
                     headers=headers,
                     params=query_params,
                     content=payload,
+                    timeout=60,
                 )
             
             await self.control_plane_db.update_lambda_request(request_id, {"status": "success", "response_data": response.text})

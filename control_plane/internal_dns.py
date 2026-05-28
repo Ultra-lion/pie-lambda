@@ -123,7 +123,7 @@ async def run_server(config:dict):
 
 if __name__=="__main__":
     asyncio.run(run_server({
-        "control_plane_ip": os.getenv("CONTROL_PLANE_IP", "0.0.0.0")
+        "control_plane_ip": os.getenv("CONTROL_PLANE_IP", "127.0.0.1")
     }))
 
     print("oooga")

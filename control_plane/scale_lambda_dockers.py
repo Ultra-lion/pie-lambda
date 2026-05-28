@@ -87,6 +87,7 @@ class LambdaScaler:
                         "ip_address":container_ip,
                         "lambda_name":lambda_func_name
                     },
+                    timeout=60
                 )
         asyncio.run_coroutine_threadsafe(register_lambda(), self.loop)
 
