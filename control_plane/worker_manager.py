@@ -1,16 +1,9 @@
-import datetime
-import httpx
 from fastapi import FastAPI, Request, HTTPException, status
 from contextlib import asynccontextmanager
-from urllib.parse import urlparse, unquote
 from control_plane_db import ControlPlaneDB
 import asyncio
 import uvicorn
-import uuid
 import os
-import json
-import time
-import datetime
 
 
 from logger_utils import log
@@ -231,9 +224,7 @@ async def runtime_invocation_next(request: Request):
                 log("WorkerManager", "polling", status="disconnected", ip=lambda_ip)
                 available_lambdas[lambda_name].pop(lambda_ip, None)
                 registered_lambdas.pop(lambda_ip, None)
-                lambda_request_events.pop(lambda_ip, None)
                 lambda_request_payloads.pop(lambda_ip, None)
-                lambda_request_responses.pop(lambda_ip, None)
                 return None
 
             try:
