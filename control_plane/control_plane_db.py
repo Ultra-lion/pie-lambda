@@ -150,22 +150,23 @@ class ControlPlaneDB(metaclass=SingletonMeta):
             return res
     
     
-    async def mark_instance_as_busy(self, instance_id, request_id):
-        log("ControlPlaneDB", "mark_instance_as_busy", instance_id=instance_id, request_id=request_id)
+    async def mark_instance_as_busy(self, ip_address, request_id=None):
+        log("ControlPlaneDB", "mark_instance_as_busy", ip_address=ip_address, request_id=request_id)
         async with self.db_connection() as db:
-            result = await db.execute("UPDATE containers SET status = 'busy', last_used_at = CURRENT_TIMESTAMP, reserved_for_request = ? WHERE container_id = ? and status = 'available'", (request_id, instance_id))
+            result = await db.execute("UPDATE containers SET status = 'busy', last_used_at = CURRENT_TIMESTAMP WHERE ip_address = ? and status = 'available'", (ip_address))
             if result.rowcount == 0:
-                log("ControlPlaneDB", "mark_instance_as_busy", instance_id=instance_id, status="failed_rowcount_0")
+                log("ControlPlaneDB", "mark_instance_as_busy", ip_address=ip_address, status="failed_rowcount_0")
                 return False
-            await db.execute("UPDATE requests SET status = 'busy', last_used_at = CURRENT_TIMESTAMP WHERE request_id = ?", (request_id,))
+            if request_id:
+                await db.execute("UPDATE requests SET status = 'busy', last_used_at = CURRENT_TIMESTAMP WHERE request_id = ?", (request_id,))
             await db.commit()
-            log("ControlPlaneDB", "mark_instance_as_busy", instance_id=instance_id, status="success")
+            log("ControlPlaneDB", "mark_instance_as_busy", ip_address=ip_address, status="success")
             return True
 
-    async def mark_instance_as_available(self, instance_id):
-        log("ControlPlaneDB", "mark_instance_as_available", instance_id=instance_id)
+    async def mark_instance_as_available(self, ip_address):
+        log("ControlPlaneDB", "mark_instance_as_available", ip_address=ip_address)
         async with self.db_connection() as db:
-            await db.execute("UPDATE containers SET status = 'available', last_used_at = CURRENT_TIMESTAMP WHERE container_id = ?", (instance_id,))
+            await db.execute("UPDATE containers SET status = 'available', last_used_at = CURRENT_TIMESTAMP WHERE ip_address = ?", (ip_address,))
             await db.commit()
             log("ControlPlaneDB", "mark_instance_as_available", status="updated")
 

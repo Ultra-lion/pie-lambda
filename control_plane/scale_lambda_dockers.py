@@ -233,7 +233,7 @@ class LambdaScaler:
                 self.loop = asyncio.get_event_loop()
             try:
                 try:
-                    await asyncio.wait_for(self.IPC_event.wait(), timeout=1)
+                    await asyncio.wait_for(self.IPC_event.wait(), timeout=100)
                     log("Scaler", "scaler_main_process", status="triggered_by_ipc")
                     self.IPC_event.clear()
                 except asyncio.TimeoutError:

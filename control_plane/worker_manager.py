@@ -243,6 +243,7 @@ async def runtime_invocation_next(request: Request):
         available_lambdas[lambda_name].pop(lambda_ip, None)
 
     lambda_payload = lambda_request_payloads.pop(lambda_ip,None)
+    await control_plane_db.mark_instance_as_busy(lambda_ip, lambda_payload.get("request_id"))
 
     return lambda_payload
 
@@ -252,6 +253,7 @@ async def runtime_invocation_response(request_id: str, request: Request):
     # Handle lambda results here
     lambda_request_responses[request_id] = await request.json()
     lambda_request_event = lambda_request_events.pop(request_id)
+    await control_plane_db.mark_instance_as_available(request.client.host)
     lambda_request_event.set()
     return {"status": "accepted"}
 
@@ -262,6 +264,7 @@ async def runtime_invocation_error(request_id: str, request: Request):
 
     lambda_request_responses[request_id] = await request.json()
     lambda_request_event = lambda_request_events.pop(request_id)
+    await control_plane_db.mark_instance_as_available(request.client.host)
     lambda_request_event.set()
     
     return {"status": "accepted"}

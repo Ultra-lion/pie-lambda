@@ -1,6 +1,6 @@
 import datetime
 import httpx
-from fastapi import FastAPI, Request, BackgroundTasks
+from fastapi import FastAPI, Request, HTTPException
 from contextlib import asynccontextmanager
 from urllib.parse import urlparse, unquote
 from control_plane_db import ControlPlaneDB
@@ -89,7 +89,10 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
     
     if not scaler_health or (time.time() - last_heartbeat > 20):
         log("LoadBalancer", "proxy_api_call", status="scaler_dead_503")
-        return 503  # Service Unavailable, Scaler is dead
+        raise HTTPException(
+            status_code=503,
+            detail="Scaler Died"
+        )  # Service Unavailable, Scaler is dead
     
     request_id = str(uuid.uuid4())
     log("LoadBalancer", "proxy_api_call", request_id=request_id)
