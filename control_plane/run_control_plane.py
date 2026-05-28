@@ -1,12 +1,10 @@
-import multiprocessing
-import uvicorn
+from datetime import datetime
 import json
 import os
 import sys
 import asyncio
 import datetime
 
-import socket
 import subprocess
 import signal
 
@@ -35,16 +33,25 @@ def restart_process(name):
 
 
 
-WATCHDOG_LOOP_TIME = 1
-PROCESS_KILL_TIME = 1
+WATCHDOG_LOOP_TIME = 5
+PROCESS_KILL_TIME = 10
+STARTUP_TIME_LIMIT=30
+
+WATCHDOG_FAILURE_LIMIT = 3*len(COMPONENT_COMMANDS)
+FAILURE_RESET_LIMIT = 1000
+
 
 async def watchdog_loop(processes):
     db = ControlPlaneDB()
+    failure_count = 0
+    last_interval = datetime.datetime.now()
     while True:
         await asyncio.sleep(WATCHDOG_LOOP_TIME)
-        async with db.db_connection() as conn:
-            cursor = await conn.execute("SELECT * FROM control_plane_health")
-            health_stats = {row['component_name']: row for row in await cursor.fetchall()}
+        if (datetime.datetime.now() - last_interval).total_seconds() > FAILURE_RESET_LIMIT:
+            failure_count = 0
+            last_interval = datetime.datetime.now()
+        
+        health_stats = await db.get_all_health_stats()
 
         for name, proc in processes.items():
             # 1. Check if the process crashed hard
@@ -62,6 +69,9 @@ async def watchdog_loop(processes):
                 except ProcessLookupError:
                     pass
                 processes[name] = restart_process(name)
+                failure_count += 1
+                if failure_count > WATCHDOG_FAILURE_LIMIT:
+                    raise Exception("Control plane components are not healthy after watchdog failure limit")
 
 
 # Ensure the root directory is in the path for internal imports
@@ -71,16 +81,38 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 async def main():
     db_manager = ControlPlaneDB()
     await db_manager.initialize_db()
+    await db_manager.clear_control_plane_health_stats()
     # 3. Start Child Processes (Sync - but called from Async)
     processes = {}
     for name in COMPONENT_COMMANDS:
         # We use a sync restart_process here because Popen is non-blocking
         processes[name] = restart_process(name)
+    
+    start_timestamp = datetime.datetime.now()
+
+    all_process_names = list(COMPONENT_COMMANDS.keys())
+
+    while True:
+        if (datetime.datetime.now() - start_timestamp).total_seconds() > STARTUP_TIME_LIMIT:
+            raise Exception("Control plane components are not healthy after startup time limit")
+        
+        health_stats = await db_manager.get_all_health_stats()
+
+        health_stats_components = list(health_stats.keys())
+
+        if set(all_process_names) == set(health_stats_components):
+            break
+        
+        await asyncio.sleep(WATCHDOG_LOOP_TIME)
+            
+
+    
     # 4. Start the Watchdog (Async - happens on the MAIN loop)
     # This blocks forever and keeps the loop alive
     try:
         await watchdog_loop(processes)
     finally:
+        await db_manager.clear_control_plane_health_stats()
         # 5. Final Cleanup
         print("Control plane shutting down. Killing children...")
         for name, p in processes.items():

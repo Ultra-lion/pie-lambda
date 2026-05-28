@@ -341,6 +341,16 @@ class ControlPlaneDB(metaclass=SingletonMeta):
             await db.commit()
             log("ControlPlaneDB", "mark_requests_as_processed", status="updated")
 
+    async def clear_control_plane_health_stats(self):
+        async with self.db_connection() as db:
+            await db.execute("delete from control_plane_health;")
+            await db.commit()
+    async def get_all_health_stats(self):
+        async with self.db_connection() as conn:
+            cursor = await conn.execute("SELECT * FROM control_plane_health")
+            health_stats = {row['component_name']: row for row in await cursor.fetchall()}
+            return health_stats
+
 if __name__=="__main__":
     test_db = ControlPlaneDB()
 
