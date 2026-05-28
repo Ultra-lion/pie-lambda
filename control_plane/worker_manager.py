@@ -239,13 +239,16 @@ async def runtime_invocation_next(request: Request):
     except Exception as e:
         return None
     finally:
-        lambda_request_payloads.pop(lambda_ip, None)
-        available_lambdas[lambda_name].pop(lambda_ip, None)
+        if lambda_name in available_lambdas:
+            available_lambdas[lambda_name].pop(lambda_ip, None)
 
     lambda_payload = lambda_request_payloads.pop(lambda_ip,None)
-    await control_plane_db.mark_instance_as_busy(lambda_ip, lambda_payload.get("request_id"))
+    if lambda_payload:
+        await control_plane_db.mark_instance_as_busy(lambda_ip, lambda_payload.get("request_id"))
 
-    return lambda_payload
+        return lambda_payload
+    
+    return None
 
 @app.post("/{sdk_date}/runtime/invocation/{request_id}/response")
 async def runtime_invocation_response(request_id: str, request: Request):
