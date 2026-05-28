@@ -124,9 +124,9 @@ async def get_lambda_images():
     return []
 
 @app.post("/{sdk_date}/functions/{function_identifier:path}/invocations")
-async def proxy_request(request: Request, path: str, sdk_date: str):
-    log("LoadBalancer", "proxy_request", path=path)
-    lambda_func_name = extract_lambda_name(path)
+async def proxy_request(request: Request, function_identifier:str,sdk_date: str):
+    log("LoadBalancer", "proxy_request", path=request.url.path)
+    lambda_func_name = extract_lambda_name(request.url.path)
     log("LoadBalancer", "proxy_request", lambda_func_name=lambda_func_name)
     
     if not lambda_func_name:

@@ -66,7 +66,9 @@ class HybridResolver(BaseResolver):
 
         # 1. Local Interception: AWS Lambda API calls
         # If the domain matches our interception pattern, point it to our Control Plane IP.
-        if qtype == 'A' and self.is_intercepted_domain(qname):
+        if qtype in ['A', 'AAAA'] and self.is_intercepted_domain(qname):
+            if qtype == 'AAAA':
+                return request.reply()
             print(f"!!! INTERCEPTING A: {qname}")
             reply = request.reply()
             reply.add_answer(RR(qname, QTYPE.A, rdata=A(self.control_plane_ip)))
@@ -112,7 +114,7 @@ async def run_server(config:dict):
     # Using ThreadingUDPServer allows the DNS server to handle multiple 
     # requests concurrently. Each request will run in its own thread, 
     # so a blocking 'forward_query' won't freeze the whole server.
-    server = DNSServer(resolver, port=53, address="0.0.0.0", server=socketserver.ThreadingUDPServer)
+    server = DNSServer(resolver, port=53, address="0.0.0.0")#, server=socketserver.ThreadingUDPServer)
     
     await asyncio.to_thread(server.start)
     print("oi")
@@ -121,7 +123,7 @@ async def run_server(config:dict):
 
 if __name__=="__main__":
     asyncio.run(run_server({
-        "control_plane_ip": os.getenv("CONTROL_PLANE_IP", "127.0.0.1")
+        "control_plane_ip": os.getenv("CONTROL_PLANE_IP", "0.0.0.0")
     }))
 
     print("oooga")
