@@ -153,7 +153,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
     async def mark_instance_as_busy(self, ip_address, request_id=None):
         log("ControlPlaneDB", "mark_instance_as_busy", ip_address=ip_address, request_id=request_id)
         async with self.db_connection() as db:
-            result = await db.execute("UPDATE containers SET status = 'busy', last_used_at = CURRENT_TIMESTAMP WHERE ip_address = ? and status = 'available'", (ip_address))
+            result = await db.execute("UPDATE containers SET status = 'busy', last_used_at = CURRENT_TIMESTAMP WHERE ip_address = ? and status = 'available'", (ip_address,))
             if result.rowcount == 0:
                 log("ControlPlaneDB", "mark_instance_as_busy", ip_address=ip_address, status="failed_rowcount_0")
                 return False
