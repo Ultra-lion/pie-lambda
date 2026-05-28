@@ -114,7 +114,7 @@ async def run_server(config:dict):
     # Using ThreadingUDPServer allows the DNS server to handle multiple 
     # requests concurrently. Each request will run in its own thread, 
     # so a blocking 'forward_query' won't freeze the whole server.
-    server = DNSServer(resolver, port=53, address="0.0.0.0")#, server=socketserver.ThreadingUDPServer)
+    server = DNSServer(resolver, port=53, address="0.0.0.0", server=socketserver.ThreadingUDPServer)
     
     await asyncio.to_thread(server.start)
     print("oi")

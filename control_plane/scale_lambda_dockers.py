@@ -209,13 +209,15 @@ class LambdaScaler:
                         print(f"Error parsing request: {data}")
                     writer.write(b"OK")
                     await writer.drain()
-                    writer.close()
-                    await writer.wait_closed()
+                    
             except asyncio.CancelledError:
                 pass
             finally:
-                writer.close()
-                await writer.wait_closed()
+                try:
+                    writer.close()
+                    await writer.wait_closed()
+                except Exception as e:
+                    log("Scaler", "ipc_server.handle_poke", error=str(e))
         
 
         server = await asyncio.start_unix_server(handle_poke, socket_path)
@@ -233,7 +235,7 @@ class LambdaScaler:
                 self.loop = asyncio.get_event_loop()
             try:
                 try:
-                    await asyncio.wait_for(self.IPC_event.wait(), timeout=100)
+                    await asyncio.wait_for(self.IPC_event.wait(), timeout=1)
                     log("Scaler", "scaler_main_process", status="triggered_by_ipc")
                     self.IPC_event.clear()
                 except asyncio.TimeoutError:

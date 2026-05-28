@@ -50,7 +50,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
             CREATE TABLE IF NOT EXISTS containers (
                 container_id TEXT PRIMARY KEY,
                 lambda_name TEXT NOT NULL,
-                ip_address TEXT NOT NULL,
+                ip_address TEXT,
                 port INTEGER,
                 status TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -112,7 +112,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
     async def create_provisioning_container(self, lambda_name, container_id):
         log("ControlPlaneDB", "create_provisioning_container", lambda_name=lambda_name)
         async with self.db_connection() as db:
-            res = await db.execute("INSERT INTO containers (lambda_name, container_id, ip_address, port, status) VALUES (?, ?, ?, ?, ?) RETURNING container_id", (lambda_name, container_id, "test", "test", None)) 
+            res = await db.execute("INSERT INTO containers (lambda_name, container_id, ip_address, status) VALUES (?, ?, ?, ?) RETURNING container_id", (lambda_name, container_id, None, "provisioning")) 
             result = await res.fetchone()
             await db.commit()
             log("ControlPlaneDB", "create_provisioning_container", lambda_name=lambda_name, container_id=result[0])

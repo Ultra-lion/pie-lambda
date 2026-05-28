@@ -151,7 +151,7 @@ async def proxy_request(request: Request, request_id:str, lambda_name:str):
     lambda_request_payloads[available_lambda_ip] = await request.json()
     available_lambda_event.set()
     try:
-        await asyncio.wait_for(lambda_request_events[request_id].wait())
+        await asyncio.wait_for(lambda_request_events[request_id].wait(),timeout=60)
     except asyncio.TimeoutError:
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
