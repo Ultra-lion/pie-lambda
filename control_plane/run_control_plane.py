@@ -57,6 +57,7 @@ async def watchdog_loop(processes):
             # 1. Check if the process crashed hard
             if proc.poll() is not None:
                 print(f"ALARM: {name} crashed. Restarting...")
+                failure_count += 1
                 processes[name] = restart_process(name)
                 continue
 
@@ -70,8 +71,9 @@ async def watchdog_loop(processes):
                     pass
                 processes[name] = restart_process(name)
                 failure_count += 1
-                if failure_count > WATCHDOG_FAILURE_LIMIT:
-                    raise Exception("Control plane components are not healthy after watchdog failure limit")
+
+        if failure_count > WATCHDOG_FAILURE_LIMIT:
+            raise Exception("Control plane components are not healthy after watchdog failure limit")
 
 
 # Ensure the root directory is in the path for internal imports
@@ -103,9 +105,16 @@ async def main():
         if set(all_process_names) == set(health_stats_components):
             break
         
-        await asyncio.sleep(WATCHDOG_LOOP_TIME)
+        await asyncio.sleep(1)
             
-
+    all_ready = True
+    for name, p in processes.items():
+        if p.poll() is not None:
+            all_ready = False
+            break
+    
+    if not all_ready:
+        raise Exception("Control plane components are not healthy after startup time limit")
     
     # 4. Start the Watchdog (Async - happens on the MAIN loop)
     # This blocks forever and keeps the loop alive
