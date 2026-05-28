@@ -153,12 +153,15 @@ async def proxy_request(request: Request, request_id:str, lambda_name:str):
     try:
         await asyncio.wait_for(lambda_request_events[request_id].wait(),timeout=60)
     except asyncio.TimeoutError:
+        lambda_request_events.pop(request_id,None)
+        lambda_request_payloads.pop(available_lambda_ip,None)
+        lambda_request_responses.pop(request_id,None)
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="The upstream server failed to respond in time."
         )
     
-    return lambda_request_responses.pop(request_id)
+    return lambda_request_responses.pop(request_id,None)
 
 
 @app.post("/register/container")
@@ -190,22 +193,23 @@ async def runtime_invocation_next(request: Request):
     log("LoadBalancer", "runtime_invocation_next", status="polling_for_work")
     # Implement long-polling logic here to hand work to containers
     if lambda_ip not in registered_lambdas:
-        lambdas_pending_registration[lambda_ip] = asyncio.Event()
+        event = asyncio.Event()
+        lambdas_pending_registration[lambda_ip] = event
         try:
             while lambda_ip not in registered_lambdas:
                 if await request.is_disconnected():
                     log("WorkerManager", "registration", status="disconnected", ip=lambda_ip)
                     return None
                 try:
-                    await asyncio.wait_for(lambdas_pending_registration[lambda_ip].wait(), timeout=0.1)
-                    lambdas_pending_registration[lambda_ip].clear()
+                    await asyncio.wait_for(event.wait(), timeout=0.1)
+                    event.clear()
                     del lambdas_pending_registration[lambda_ip]
                     break
                 except asyncio.TimeoutError:
                     container = await control_plane_db.get_lambda_container_by_ip(lambda_ip)
                     if container:
                         registered_lambdas[lambda_ip] = container['lambda_name']
-                        lambdas_pending_registration[lambda_ip].clear()
+                        event.clear()
                         del lambdas_pending_registration[lambda_ip]
                         break
         except Exception as e:
@@ -217,6 +221,8 @@ async def runtime_invocation_next(request: Request):
     if lambda_name not in available_lambdas:
         available_lambdas[lambda_name]={}
     available_lambdas[lambda_name][lambda_ip] = asyncio.Event()
+    
+    event = available_lambdas.get(lambda_name,{}).get(lambda_ip,None)
 
     try:
         while True:
@@ -231,7 +237,7 @@ async def runtime_invocation_next(request: Request):
                 return None
 
             try:
-                await asyncio.wait_for(available_lambdas[lambda_name][lambda_ip].wait(), timeout=0.5)
+                await asyncio.wait_for(event.wait(), timeout=0.5)
                 break
             except asyncio.TimeoutError:
                 continue
@@ -239,7 +245,7 @@ async def runtime_invocation_next(request: Request):
     except Exception as e:
         return None
     finally:
-        if lambda_name in available_lambdas:
+        if lambda_name in available_lambdas and event == available_lambdas.get(lambda_name,{}).get(lambda_ip,None):
             available_lambdas[lambda_name].pop(lambda_ip, None)
 
     lambda_payload = lambda_request_payloads.pop(lambda_ip,None)
@@ -254,21 +260,22 @@ async def runtime_invocation_next(request: Request):
 async def runtime_invocation_response(request_id: str, request: Request):
     log("LoadBalancer", "runtime_invocation_response", request_id=request_id)
     # Handle lambda results here
-    lambda_request_responses[request_id] = await request.json()
-    lambda_request_event = lambda_request_events.pop(request_id)
+    lambda_request_event = lambda_request_events.pop(request_id,None)
     await control_plane_db.mark_instance_as_available(request.client.host)
-    lambda_request_event.set()
+    if lambda_request_event:
+        lambda_request_responses[request_id] = await request.json()
+        lambda_request_event.set()
     return {"status": "accepted"}
 
 @app.post("/{sdk_date}/runtime/invocation/{request_id}/error")
 async def runtime_invocation_error(request_id: str, request: Request):
     log("LoadBalancer", "runtime_invocation_error", request_id=request_id)
     # Handle lambda errors here
-
-    lambda_request_responses[request_id] = await request.json()
-    lambda_request_event = lambda_request_events.pop(request_id)
+    lambda_request_event = lambda_request_events.pop(request_id,None)
     await control_plane_db.mark_instance_as_available(request.client.host)
-    lambda_request_event.set()
+    if lambda_request_event:
+        lambda_request_responses[request_id] = await request.json()
+        lambda_request_event.set()
     
     return {"status": "accepted"}
 
