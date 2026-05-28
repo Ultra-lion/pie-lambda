@@ -55,14 +55,10 @@ def build_lambda_dockers(lambda_funcs_to_deploy:List[LambdaImageConfig]):
 
     created_images = []
 
-    # with ThreadPoolExecutor() as executor:
-    #     created_images = executor.map(build_docker_worker, lambda_funcs_to_deploy.values())
-    #     print([image for image in created_images])
-    
-    # print([image for image in created_images])
-    
-    for func in lambda_funcs_to_deploy.values():
-        build_docker_worker(func)
+    with ThreadPoolExecutor() as executor:
+        images = list(executor.map(build_docker_worker, lambda_funcs_to_deploy.values()))
+        created_images.extend(images)
+
 
 
 def build_lambda_functions(config:dict):

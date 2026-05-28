@@ -1,7 +1,6 @@
 
 import asyncio
 import docker
-import asyncio
 import os
 import time 
 from datetime import datetime, timedelta
@@ -83,7 +82,7 @@ class LambdaScaler:
         async def register_lambda():
             async with httpx.AsyncClient() as client:
                 await client.post(
-                    "http://0.0.0.0:80/register/container",
+                    "http://127.0.0.1:80/register/container",
                     json={
                         "ip_address":container_ip,
                         "lambda_name":lambda_func_name
@@ -199,6 +198,8 @@ class LambdaScaler:
             try:
                 while True:
                     data = await reader.read(1024)
+                    if not data:
+                        break
                     log("Scaler", "ipc_server.handle_poke", status="received_data")
                     try:
                         log("Scaler", "ipc_server.handle_poke")
