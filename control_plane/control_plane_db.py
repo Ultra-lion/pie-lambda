@@ -4,7 +4,7 @@ import asyncio
 from logger_utils import log
 
 
-DEFAULT_CONTAINERS_LIMIT = 1
+DEFAULT_CONTAINERS_LIMIT = 10
 
 class SingletonMeta(type):
     _instances = {}
@@ -32,19 +32,6 @@ class ControlPlaneDB(metaclass=SingletonMeta):
     async def initialize_db(self):
         log("ControlPlaneDB", "initialize_db", status="starting")
         async with self.db_connection() as db:
-
-            # await db.execute("""
-            # CREATE TABLE IF NOT EXISTS lambda_images (
-            #     image_id TEXT PRIMARY KEY,
-            #     lambda_name TEXT NOT NULL,
-            #     image_name TEXT NOT NULL,
-            #     image_tag TEXT NOT NULL,
-            #     image_digest TEXT NOT NULL,
-            #     image_size TEXT NOT NULL,
-            #     image_created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            #     image_last_used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            # )
-            # """)
 
             await db.execute("""
             CREATE TABLE IF NOT EXISTS containers (
