@@ -12,6 +12,8 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from datetime import datetime, timedelta
 import docker
 import certifi
+import shutil
+
 
 
 def generate_master_ca():
@@ -27,7 +29,7 @@ def generate_master_ca():
         .issuer_name(issuer)
         .public_key(private_key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.now() - timedelta(hours=1))
+        .not_valid_before(datetime.now() - timedelta(days=1))
         .not_valid_after(datetime.now() + timedelta(days=365))
         .add_extension(
             x509.BasicConstraints(ca=True, path_length=None),
@@ -91,13 +93,20 @@ def generate_master_bundle():
         f.write(system_bundle)
 
 
+def move_certs_to_control_plane():
+    os.system("cp certs/ca.crt control_plane/ca.crt")
+    os.system("cp certs/ca.key control_plane/ca.key")
+    os.system("cp certs/server.crt control_plane/server.crt")
+    os.system("cp certs/server.key control_plane/server.key")
 
 def generate_certs():
-    if not os.path.exists("certs"):
-        os.makedirs("certs", exist_ok=True)
-        generate_master_ca()
-        generate_aws_impersonator_cert()
-        generate_master_bundle()
+    if os.path.exists("certs"):
+        shutil.rmtree("certs")
+    os.makedirs("certs", exist_ok=True)
+    generate_master_ca()
+    generate_aws_impersonator_cert()
+    generate_master_bundle()
+    move_certs_to_control_plane()
 
 def check_if_docker_running():
     try:
