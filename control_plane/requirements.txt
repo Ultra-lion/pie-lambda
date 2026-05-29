@@ -3,6 +3,6 @@ uvicorn[standard]
 dnslib
 httpx
 pydantic
-sqlalchemy
-aiosqlite
+py-pglite
+asyncpg
 docker
