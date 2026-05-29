@@ -164,7 +164,7 @@ def deploy_control_plane_docker(config:dict):
     
     client.containers.run(
         image=control_plane_docker_image,
-        command="tail -f /dev/null",
+        # command="tail -f /dev/null",
         name="pie-lambda-control-plane",
         network=BASE_NETWORK_BRIDGE,
         volumes=volumes,
