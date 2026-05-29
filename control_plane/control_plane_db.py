@@ -4,7 +4,7 @@ import asyncio
 from logger_utils import log
 
 
-DEFAULT_CONTAINERS_LIMIT = 10
+DEFAULT_CONTAINERS_LIMIT = 1
 
 class SingletonMeta(type):
     _instances = {}

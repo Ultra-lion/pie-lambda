@@ -8,10 +8,8 @@ import asyncio
 import uvicorn
 import uuid
 import os
-import json
 import time
 import datetime
-
 
 from logger_utils import log
 
@@ -101,13 +99,14 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
     
     if type == "RequestResponse":
         try:
+            payload_body = await request.json()
+            payload_body['request_id'] = request_id
             async with httpx.AsyncClient() as client:
                 response = await client.request(
                     method="POST",
                     url=f"http://127.0.0.1:80/proxy_request/{lambda_func_name}/{request_id}",
-                    headers=request.headers,
                     params=request.query_params,
-                    content=await request.body(),
+                    json=payload_body,
                     timeout=60
                 )
             

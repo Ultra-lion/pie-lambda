@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request, HTTPException, status
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from control_plane_db import ControlPlaneDB
 import asyncio
@@ -8,6 +9,8 @@ import os
 
 from logger_utils import log
 
+
+LAMBDA_TIMEOUT = 300000
 
 control_plane_db = None
 
@@ -137,8 +140,12 @@ async def proxy_request(request: Request, request_id:str, lambda_name:str):
             await scaler_client.poke_scaler()
             await asyncio.sleep(0.1)
         else:
-            available_lambda_event = available_lambdas[lambda_name].pop(available_lambda_ip)
-            break
+            available_lambda_event = available_lambdas[lambda_name].pop(available_lambda_ip,None)
+            if not available_lambda_event:
+                available_lambda_ip=None
+                continue
+            else:
+                break
     
     lambda_request_events[request_id]=asyncio.Event()
     lambda_request_payloads[available_lambda_ip] = await request.json()
@@ -153,7 +160,6 @@ async def proxy_request(request: Request, request_id:str, lambda_name:str):
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="The upstream server failed to respond in time."
         )
-    
     return lambda_request_responses.pop(request_id,None)
 
 
@@ -241,9 +247,16 @@ async def runtime_invocation_next(request: Request):
 
     lambda_payload = lambda_request_payloads.pop(lambda_ip,None)
     if lambda_payload:
-        await control_plane_db.mark_instance_as_busy(lambda_ip, lambda_payload.get("request_id"))
-
-        return lambda_payload
+        request_id = lambda_payload.pop("request_id",None)
+        await control_plane_db.mark_instance_as_busy(lambda_ip, request_id)
+        if not request_id:
+            await control_plane_db.update_lambda_request(request_id, {"status": "error", "error_data": "Invalid request"})
+            raise HTTPException(status_code=422, detail="unprocessable entity")
+        headers = {
+            "Lambda-Runtime-Aws-Request-Id": str(request_id),
+            "Lambda-Runtime-Deadline-Ms": str(LAMBDA_TIMEOUT), # Example: 5 minutes from now
+        }
+        return JSONResponse(content=lambda_payload, headers=headers)
     
     return None
 
@@ -281,7 +294,7 @@ async def runtime_invocation_error(request_id: str, request: Request):
 def run_http():
     uvicorn.run(
         app, 
-        host="127.0.0.1", 
+        host="0.0.0.0", 
         port=80,
         log_level="DEBUG"
     )
