@@ -9,11 +9,10 @@ from cryptography import x509
 from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import docker
 import certifi
 import shutil
-
 
 
 def generate_master_ca():
@@ -29,8 +28,8 @@ def generate_master_ca():
         .issuer_name(issuer)
         .public_key(private_key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.now() - timedelta(days=1))
-        .not_valid_after(datetime.now() + timedelta(days=365))
+        .not_valid_before(datetime.now(timezone.utc) - timedelta(days=1))
+        .not_valid_after(datetime.now(timezone.utc) + timedelta(days=365))
         .add_extension(
             x509.BasicConstraints(ca=True, path_length=None),
             critical=True,
