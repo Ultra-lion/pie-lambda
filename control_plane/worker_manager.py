@@ -256,6 +256,7 @@ async def runtime_invocation_next(request: Request):
             "Lambda-Runtime-Aws-Request-Id": str(request_id),
             "Lambda-Runtime-Deadline-Ms": str(LAMBDA_TIMEOUT), # Example: 5 minutes from now
         }
+        await control_plane_db.update_lambda_request(request_id, {"status": "in_progress"})
         return JSONResponse(content=lambda_payload, headers=headers)
     
     return None

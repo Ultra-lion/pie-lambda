@@ -246,6 +246,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                     
                 )
             """)
+            await db.commit()
 
     async def get_all_containers(self):
         log("ControlPlaneDB", "get_all_containers")
