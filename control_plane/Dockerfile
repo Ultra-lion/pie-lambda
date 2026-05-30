@@ -10,14 +10,20 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 # Install system dependencies (minimal)
+# Install system dependencies (including Node 20)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    g++ \
+    make \
     python3-dev \
-    nodejs \
-    npm \
+    curl \
+    ca-certificates \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-RUN npm install @electric-sql/pglite@0.1.5 @electric-sql/pglite-socket@0.0.5
+
+RUN npm install @electric-sql/pglite @electric-sql/pglite-socket
 
 # Copy the entire project context
 # This ensures that internal imports like 'from control_plane.control_plane_db import ...' work correctly

@@ -21,7 +21,7 @@ COMPONENT_COMMANDS = {
 }
 
 DB_MULTIPLEXER = {
-    "DB_MULTIPLEXER": [sys.executable, "pglite-socket-db.py"],
+    "DB_MULTIPLEXER": ["node", "pglite-socket-db.mjs"],
 }
 
 def restart_process(name):
@@ -102,6 +102,17 @@ async def main():
     processes = {}
 
     processes["DB_MULTIPLEXER"] = restart_process("DB_MULTIPLEXER")
+
+    while True:
+        try:
+            reader, writer = await asyncio.wait_for(asyncio.open_connection("127.0.0.1", 6957), timeout=1)
+            writer.close()
+            await writer.wait_closed()
+            break
+        except Exception as e:
+            print(f"ALARM: DB_MULTIPLEXER Not Started")
+            await asyncio.sleep(1)
+
 
     db_manager = ControlPlaneDB()
     await db_manager.initialize_db()

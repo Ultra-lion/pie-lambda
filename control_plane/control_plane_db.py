@@ -23,9 +23,12 @@ class ControlPlaneDB(metaclass=SingletonMeta):
         # log("ControlPlaneDB", "db_connection", status="opening") # Too noisy if left active
         if not self.pool:
             self.pool = await asyncpg.create_pool(
-            min_size=1,
-            max_size=5
-        )
+                host="127.0.0.1",
+                port=6957,
+                user="postgres",
+                min_size=1,
+                max_size=5
+            )
         try:
             async with self.pool.acquire() as conn:
                 yield conn
@@ -33,6 +36,9 @@ class ControlPlaneDB(metaclass=SingletonMeta):
             log("ControlPlaneDB", "db_connection", status="error", error=str(e))
             try:
                 self.pool = await asyncpg.create_pool(
+                    host="127.0.0.1",
+                    port=6957,
+                    user="postgres",
                     min_size=1,
                     max_size=5
                 )
