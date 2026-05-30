@@ -13,9 +13,11 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     python3-dev \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
-
+RUN npm install @electric-sql/pglite@0.1.5 @electric-sql/pglite-socket@0.0.5
 
 # Copy the entire project context
 # This ensures that internal imports like 'from control_plane.control_plane_db import ...' work correctly
