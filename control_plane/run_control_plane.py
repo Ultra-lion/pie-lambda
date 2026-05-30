@@ -20,8 +20,12 @@ COMPONENT_COMMANDS = {
     "EVENTS_HANDLER": [sys.executable, "handle_lambda_events_queue.py"]
 }
 
+DB_MULTIPLEXER = {
+    "DB_MULTIPLEXER": [sys.executable, "pglite-socket-db.py"],
+}
+
 def restart_process(name):
-    cmd = COMPONENT_COMMANDS.get(name)
+    cmd = COMPONENT_COMMANDS.get(name) or DB_MULTIPLEXER.get(name)
     if not cmd:
         print(f"Unknown component: {name}")
         return None
@@ -60,6 +64,19 @@ async def watchdog_loop(processes):
                 failure_count += 1
                 processes[name] = restart_process(name)
                 continue
+            
+            if name == "DB_MULTIPLEXER":
+                try:
+                    reader, writer = await asyncio.wait_for(asyncio.open_connection("127.0.0.1", 6957), timeout=1)
+                    writer.close()
+                    await writer.wait_closed()
+                except Exception as e:
+                    print(f"ALARM: DB_MULTIPLEXER is not healthy. Restarting...")
+                    failure_count += 1
+                    processes[name] = restart_process(name)
+
+                continue
+                
 
             # 2. Check if the process is "Ghosted" (Frozen/Deadlocked)
             stat = health_stats.get(name)
@@ -81,11 +98,15 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 async def main():
+
+    processes = {}
+
+    processes["DB_MULTIPLEXER"] = restart_process("DB_MULTIPLEXER")
+
     db_manager = ControlPlaneDB()
     await db_manager.initialize_db()
     await db_manager.clear_control_plane_health_stats()
     # 3. Start Child Processes (Sync - but called from Async)
-    processes = {}
     for name in COMPONENT_COMMANDS:
         # We use a sync restart_process here because Popen is non-blocking
         processes[name] = restart_process(name)

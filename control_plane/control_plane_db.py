@@ -26,54 +26,67 @@ class ControlPlaneDB(metaclass=SingletonMeta):
             min_size=1,
             max_size=5
         )
-        async with self.pool.acquire() as conn:
-            yield conn
+        try:
+            async with self.pool.acquire() as conn:
+                yield conn
+        except Exception as e:
+            log("ControlPlaneDB", "db_connection", status="error", error=str(e))
+            try:
+                self.pool = await asyncpg.create_pool(
+                    min_size=1,
+                    max_size=5
+                )
+                
+            finally:
+                raise e
+                
+            
 
             
 
     async def initialize_db(self):
         log("ControlPlaneDB", "initialize_db", status="starting")
         async with self.db_connection() as db:
+            async with db.transaction():
+                await db.execute("""
+                CREATE TABLE IF NOT EXISTS containers (
+                    container_id TEXT PRIMARY KEY,
+                    lambda_name TEXT NOT NULL,
+                    ip_address TEXT,
+                    port INTEGER,
+                    status TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                    
+                """)
 
-            await db.execute("""
-            CREATE TABLE IF NOT EXISTS containers (
-                container_id TEXT PRIMARY KEY,
-                lambda_name TEXT NOT NULL,
-                ip_address TEXT,
-                port INTEGER,
-                status TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                await db.execute("""
+                CREATE TABLE IF NOT EXISTS requests (
+                    request_id TEXT PRIMARY KEY,
+                    lambda_name TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    priority INTEGER ,
+                    request_data TEXT,
+                    response_data TEXT,
+                    status TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-                
-            """)
+                """)
 
-            await db.execute("""
-            CREATE TABLE IF NOT EXISTS requests (
-                request_id TEXT PRIMARY KEY,
-                lambda_name TEXT NOT NULL,
-                event_type TEXT NOT NULL,
-                priority INTEGER ,
-                request_data TEXT,
-                response_data TEXT,
-                status TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """)
-
-            await db.execute("""
-            CREATE TABLE IF NOT EXISTS control_plane_health (
-                component_name TEXT PRIMARY KEY,
-                pid INTEGER NOT NULL,
-                last_heartbeat TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """)
+                await db.execute("""
+                CREATE TABLE IF NOT EXISTS control_plane_health (
+                    component_name TEXT PRIMARY KEY,
+                    pid INTEGER NOT NULL,
+                    last_heartbeat TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """)
 
 
-            await db.execute("CREATE INDEX IF NOT EXISTS idx_containers_status ON containers(lambda_name, status);")
-            await db.execute("CREATE INDEX IF NOT EXISTS idx_containers_last_used ON containers(last_used_at, status);")
-            await db.execute("CREATE INDEX IF NOT EXISTS idx_requests ON requests(status, priority);")
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_containers_status ON containers(lambda_name, status);")
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_containers_last_used ON containers(last_used_at, status);")
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_requests ON requests(status, priority);")
 
         log("ControlPlaneDB", "initialize_db", status="completed")
     
@@ -132,14 +145,15 @@ class ControlPlaneDB(metaclass=SingletonMeta):
     async def mark_instance_as_busy(self, ip_address, request_id=None):
         log("ControlPlaneDB", "mark_instance_as_busy", ip_address=ip_address, request_id=request_id)
         async with self.db_connection() as db:
-            result = await db.fetchrow("UPDATE containers SET status = 'busy', last_used_at = CURRENT_TIMESTAMP WHERE ip_address = $1 AND status = 'available' RETURNING container_id", ip_address)
-            if result is None:
-                log("ControlPlaneDB", "mark_instance_as_busy", ip_address=ip_address, status="failed_rowcount_0")
-                return False
-            if request_id:
-                await db.execute("UPDATE requests SET status = 'busy', last_used_at = CURRENT_TIMESTAMP WHERE request_id = $1", request_id)
-            log("ControlPlaneDB", "mark_instance_as_busy", ip_address=ip_address, status="success")
-            return True
+            async with db.transaction():
+                result = await db.fetchrow("UPDATE containers SET status = 'busy', last_used_at = CURRENT_TIMESTAMP WHERE ip_address = $1 AND status = 'available' RETURNING container_id", ip_address)
+                if result is None:
+                    log("ControlPlaneDB", "mark_instance_as_busy", ip_address=ip_address, status="failed_rowcount_0")
+                    return False
+                if request_id:
+                    await db.execute("UPDATE requests SET status = 'busy', last_used_at = CURRENT_TIMESTAMP WHERE request_id = $1", request_id)
+                log("ControlPlaneDB", "mark_instance_as_busy", ip_address=ip_address, status="success")
+                return True
 
     async def mark_instance_as_available(self, ip_address):
         log("ControlPlaneDB", "mark_instance_as_available", ip_address=ip_address)
@@ -234,50 +248,51 @@ class ControlPlaneDB(metaclass=SingletonMeta):
     async def calculate_scaleup_requests(self):
         log("ControlPlaneDB", "calculate_scaleup_requests", status="starting")
         async with self.db_connection() as db:
-            pending_requests = await db.fetch("""
-            SELECT lambda_name, COUNT(*) as required_containers
-            FROM requests
-            WHERE 
-            (status = 'pending' AND event_type='RequestResponse' AND created_at > NOW() - INTERVAL '5 minutes')
-            OR (status = 'pending' AND event_type='Event' AND created_at > NOW() - INTERVAL '120 minutes')
-            GROUP BY lambda_name
-            ORDER BY MAX(priority) DESC, MIN(created_at) ASC;
-            """)
-            containers_counts = await db.fetch("SELECT lambda_name, status, COUNT(*) as container_count FROM containers WHERE status IN ('available','provisioning', 'busy') GROUP BY lambda_name, status")
-            
-            stats = {}
-            for row in containers_counts:
-                ln = row['lambda_name']
-                st = row['status']
-                cnt = row['container_count']
-                if ln not in stats:
-                    stats[ln] = {'available': 0, 'provisioning': 0, 'reserved': 0, 'busy': 0}
-                stats[ln][st] = cnt
-            results = []
-            # 2. Iterate through pending requests and calculate shortfall
-            for req in pending_requests:
-                name = req['lambda_name']
-                pending_cnt = req['required_containers']
+            async with db.transaction():
+                pending_requests = await db.fetch("""
+                SELECT lambda_name, COUNT(*) as required_containers
+                FROM requests
+                WHERE 
+                (status = 'pending' AND event_type='RequestResponse' AND created_at > NOW() - INTERVAL '5 minutes')
+                OR (status = 'pending' AND event_type='Event' AND created_at > NOW() - INTERVAL '120 minutes')
+                GROUP BY lambda_name
+                ORDER BY MAX(priority) DESC, MIN(created_at) ASC;
+                """)
+                containers_counts = await db.fetch("SELECT lambda_name, status, COUNT(*) as container_count FROM containers WHERE status IN ('available','provisioning', 'busy') GROUP BY lambda_name, status")
                 
-                # Get current numbers for this lambda
-                s = stats.get(name, {'available': 0, 'provisioning': 0, 'reserved': 0, 'busy': 0})
-                total_existing = sum(s.values())
-                
-                # How many MORE do we need to satisfy the queue?
-                needed = pending_cnt - s['provisioning']
-                
-                # How many MORE are we allowed to build?
-                allowed = max(0, self.individual_lambda_scale_limit - total_existing)
-                
-                to_create = min(needed, allowed)
-                
-                if to_create > 0:
-                    results.append({
-                        "lambda_name": name,
-                        "required_containers": to_create
-                    })
-            log("ControlPlaneDB", "calculate_scaleup_requests", result_count=len(results))
-            return results
+                stats = {}
+                for row in containers_counts:
+                    ln = row['lambda_name']
+                    st = row['status']
+                    cnt = row['container_count']
+                    if ln not in stats:
+                        stats[ln] = {'available': 0, 'provisioning': 0, 'reserved': 0, 'busy': 0}
+                    stats[ln][st] = cnt
+                results = []
+                # 2. Iterate through pending requests and calculate shortfall
+                for req in pending_requests:
+                    name = req['lambda_name']
+                    pending_cnt = req['required_containers']
+                    
+                    # Get current numbers for this lambda
+                    s = stats.get(name, {'available': 0, 'provisioning': 0, 'reserved': 0, 'busy': 0})
+                    total_existing = sum(s.values())
+                    
+                    # How many MORE do we need to satisfy the queue?
+                    needed = pending_cnt - s['provisioning']
+                    
+                    # How many MORE are we allowed to build?
+                    allowed = max(0, self.individual_lambda_scale_limit - total_existing)
+                    
+                    to_create = min(needed, allowed)
+                    
+                    if to_create > 0:
+                        results.append({
+                            "lambda_name": name,
+                            "required_containers": to_create
+                        })
+                log("ControlPlaneDB", "calculate_scaleup_requests", result_count=len(results))
+                return results
     
     async def get_component_health(self, component_name):
         # log("ControlPlaneDB", "get_component_health", component=component_name) # Too noisy
