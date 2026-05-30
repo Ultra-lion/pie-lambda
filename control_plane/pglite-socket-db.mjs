@@ -8,11 +8,14 @@ async function start() {
   const server = new PGLiteSocketServer({
     db,
     host: '0.0.0.0',
-    port: 6957
+    port: 6957,
+    maxConnections: 100
   });
 
   await server.start();
   console.log('PGlite IN-MEMORY server listening on 0.0.0.0:6957');
+  // Basic logging to see pulses
+  db.listen('connect', () => console.log('Client connected to PGlite'));
 }
 
 start().catch((err) => {

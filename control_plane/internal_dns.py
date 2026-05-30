@@ -97,12 +97,7 @@ async def start_heartbeat(component_name):
     pid = os.getpid()
     
     while True:
-        async with db.db_connection() as conn:
-            await conn.execute(
-                "REPLACE INTO control_plane_health (component_name, pid, last_heartbeat) VALUES (?, ?, CURRENT_TIMESTAMP)",
-                (component_name, pid)
-            )
-            await conn.commit()
+        await db.update_health_stats(component_name, pid)
         await asyncio.sleep(5)
 
 

@@ -108,6 +108,7 @@ async def main():
             reader, writer = await asyncio.wait_for(asyncio.open_connection("127.0.0.1", 6957), timeout=1)
             writer.close()
             await writer.wait_closed()
+            print(f"DB_MULTIPLEXER Started")
             break
         except Exception as e:
             print(f"ALARM: DB_MULTIPLEXER Not Started")
