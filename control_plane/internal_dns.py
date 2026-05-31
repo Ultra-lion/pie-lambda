@@ -84,7 +84,8 @@ class HybridResolver(BaseResolver):
         # 3. Fallback: Host DNS
         # Only used if Docker DNS fails to provide an answer.
         print(f"[DNS] Falling back to Host Machine DNS for {qname}")
-        reply = self.forward_query(request, self.host_dns)
+        reply = request.reply()
+        reply.add_answer(RR(qname, QTYPE.A, rdata=A(self.host_dns)))
         if reply:
             return reply
 

@@ -69,7 +69,7 @@ class LambdaQueueHandler:
         pid = os.getpid()
         
         while True:
-            await db.update_health_stats(component_name)
+            await db.update_health_stats(component_name, pid)
             await asyncio.sleep(5)
 
 

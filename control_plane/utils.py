@@ -24,6 +24,8 @@ def parse_timestamp(ts_str):
     """
     Parses SQLite timestamp strings into datetime objects for health checks.
     """
+    if isinstance(ts_str, datetime.datetime):
+        return ts_str
     formats = ["%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"]
     for fmt in formats:
         try:

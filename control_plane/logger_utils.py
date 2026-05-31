@@ -25,7 +25,7 @@ funcs_to_print_data_for = [
     "proxy_request",
 ]
 
-print_all = True
+print_all = False
 
 def log(service, function, **datapoints):
     if print_all or function in funcs_to_print_data_for:
