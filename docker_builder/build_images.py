@@ -172,6 +172,8 @@ def deploy_control_plane_docker(config:dict):
         extra_hosts={"host.docker.internal":"host-gateway"}
     )
 
+def buildlambdas(config):
+    build_lambda_functions(config)
 
 def build(config:dict):
     setup_docker_network_bridge()

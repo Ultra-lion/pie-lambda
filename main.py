@@ -1,7 +1,6 @@
 
 from websockets import client
 import argparse
-from docker_builder.build_images import build, deploy, shutdown, teardown, run_existing
 import argparse 
 import json
 import os
@@ -13,6 +12,8 @@ from datetime import datetime, timedelta, timezone
 import docker
 import certifi
 import shutil
+
+from docker_builder.build_images import build, deploy, shutdown, teardown, run_existing, buildlambdas
 
 
 def generate_master_ca():
@@ -127,7 +128,7 @@ if __name__=="__main__":
     
     parser.add_argument("--command", 
                         dest="command", 
-                        choices=["build", "deploy", "teardown", "shutdown", "RunExisting"],
+                        choices=["build", "buildlambdas", "deploy", "teardown", "shutdown", "RunExisting"],
                         default="build",
                         help="Action to perform")
     args = parser.parse_args()
@@ -155,6 +156,8 @@ if __name__=="__main__":
     match command:
         case "build":
             build(config)
+        case "buildlambdas":
+            buildlambdas(config)
         case "deploy":
             deploy(config)
         case "teardown":

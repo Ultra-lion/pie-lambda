@@ -6,6 +6,9 @@ import time
 from datetime import datetime, timedelta
 import uuid
 import httpx
+import tarfile
+import io
+
 
 from control_plane_db import ControlPlaneDB
 from logger_utils import log
@@ -20,11 +23,7 @@ class LambdaScaler:
         self.IPC_event = asyncio.Event()
         self.loop = None
         self.docker_sdk_check_time = None
-        self.ca_path = config.get("ca_path")
-        if not self.ca_path:
-            self.ca_path = "/home/rohan/Desktop/FUN-Projects/pie-lambda/certs/"
-            # raise Exception("Cert path not found in config")
-        
+             
     def get_lambda_image_name(self, lambda_func_name):
         image_name = f"{BASE_SUBSTR}-{lambda_func_name}:latest"
         log("Scaler", "get_lambda_image_name", lambda_name=lambda_func_name, image_name=image_name)
@@ -42,14 +41,11 @@ class LambdaScaler:
         provisioning_row_id = provisioning_row_id_future.result()
         log("Scaler", "scale_up_lambda", status="row_created", provisioning_id=provisioning_row_id)
         control_plane_ip = get_local_ip()
-        container = self.docker_client.containers.run(
+        container = self.docker_client.containers.create(
             image= self.get_lambda_image_name(lambda_func_name),
             name= container_id,
             detach=True,
             network=BASE_NETWORK_BRIDGE,
-            volumes={
-                self.ca_path: {'bind': '/etc/ssl/certs/ca.crt', 'mode': 'ro'},
-            },
             dns=[control_plane_ip],
             environment={
                 "AWS_LAMBDA_RUNTIME_API": f"{control_plane_ip}",
@@ -58,6 +54,19 @@ class LambdaScaler:
             extra_hosts={"host.docker.internal": "host-gateway"}
         )
         log("Scaler", "scale_up_lambda", status="container_started", container_id=container.id)
+        
+        stream = io.BytesIO()
+        with tarfile.open(fileobj=stream, mode='w') as tar:
+            with open('/etc/ssl/certs/ca.crt', 'rb') as f:
+                info = tarfile.TarInfo(name='ca.crt')
+                info.size = len(f.read())
+                f.seek(0)
+                tar.addfile(info, f)
+        # 3. Push and Start
+        container.put_archive('/etc/ssl/certs/', stream.getvalue()) # or /etc/custom-ssl/
+        
+        container.start()
+        
         container_ip = None
 
         while not container_ip:
@@ -67,7 +76,6 @@ class LambdaScaler:
             except Exception as e:
                 log("Scaler", "scale_up_lambda", container_ip=container_ip)
             time.sleep(0.1)
-
 
         future = asyncio.run_coroutine_threadsafe(
             self.control_plane_db.add_lambda_deployed_instances(
