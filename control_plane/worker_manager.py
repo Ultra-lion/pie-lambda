@@ -143,7 +143,10 @@ async def proxy_request(request: Request, request_id:str, lambda_name:str):
                 break
     
     lambda_request_events[request_id]=asyncio.Event()
-    lambda_request_payloads[available_lambda_ip] = await request.json()
+    lambda_payload = await request.json()
+    if "request_id" not in lambda_payload:
+        lambda_payload['request_id'] =  request_id
+    lambda_request_payloads[available_lambda_ip] = lambda_payload
     available_lambda_event.set()
     try:
         await asyncio.wait_for(lambda_request_events[request_id].wait(),timeout=60)

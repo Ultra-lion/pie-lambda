@@ -4,6 +4,7 @@ from control_plane_db import ControlPlaneDB
 import asyncio
 import asyncio
 import os
+import json
 from logger_utils import log
 
 class LambdaQueueHandler:
@@ -24,14 +25,14 @@ class LambdaQueueHandler:
         try:
             headers={}
             query_params={}
-
+            payload = json.loads(payload) if isinstance(payload, str) else payload
             async with httpx.AsyncClient() as client:
                 response = await client.request(
                     method="POST",
                     url=f"http://127.0.0.1:80/proxy_request/{lamdba_name}/{request_id}",
                     headers=headers,
                     params=query_params,
-                    content=payload,
+                    json=payload,
                     timeout=60,
                 )
             
@@ -50,8 +51,8 @@ class LambdaQueueHandler:
                 enqueued_events = await self.control_plane_db.get_enqueued_events()
                 if enqueued_events:
                     log("EventHandler", "handle_enqueued_events", enqueued_count=len(enqueued_events))
-                    
-                    await self.control_plane_db.mark_requests_as_processing(enqueued_events)
+                    requests = [event.get("request_id") for event in enqueued_events]
+                    await self.control_plane_db.mark_requests_as_processing(requests)
                     
                     for event in enqueued_events:
                         asyncio.create_task(self.proxy_api_calls(event['lambda_name'], event['request_data'], event['request_id']))

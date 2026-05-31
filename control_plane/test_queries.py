@@ -53,6 +53,10 @@ async def execute_query(query_string: str, params: tuple = None):
 async def main():
     await create_pool()
     print("pool created")
+
+    update_sql = "update requests set status = 'pending' where request_id='b4df17a8-78a2-4e83-947c-0c72a4aebf67'"
+    res = await execute_query(update_sql)
+
     sql_select = "SELECT * from requests;"
     res = await execute_query(sql_select)
     print("Result:", res)

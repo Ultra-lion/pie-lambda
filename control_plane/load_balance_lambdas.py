@@ -1,4 +1,3 @@
-import datetime
 import httpx
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
@@ -10,7 +9,7 @@ import uvicorn
 import uuid
 import os
 import time
-import datetime
+import json
 
 from utils import parse_timestamp
 
@@ -92,8 +91,9 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
     
     request_id = str(uuid.uuid4())
     log("LoadBalancer", "proxy_api_call", request_id=request_id)
-    
-    await control_plane_db.create_lambda_request(request_id, lambda_func_name, request, type)
+    request_body = await request.json()
+    request_body = json.dumps(request_body)
+    await control_plane_db.create_lambda_request(request_id, lambda_func_name, request, type, request_body)
     
     if type == "RequestResponse":
         try:

@@ -4,6 +4,7 @@ from psycopg_pool import AsyncConnectionPool
 from contextlib import asynccontextmanager
 import asyncio
 from logger_utils import log
+import json
 
 
 DEFAULT_CONTAINERS_LIMIT = 1
@@ -210,12 +211,12 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                 await cur.execute("DELETE FROM containers WHERE container_id = ANY(%s)", (container_ids,)) 
                 log("ControlPlaneDB", "remove_destroyed_containers", status="deleted")
 
-    async def create_lambda_request(self, request_id, lambda_func_name, request, event_type):
+    async def create_lambda_request(self, request_id, lambda_func_name, request, event_type, request_body):
         log("ControlPlaneDB", "create_lambda_request", request_id=request_id, lambda_name=lambda_func_name)
         if hasattr(request, "get"):
             event_type = event_type
             priority = 1 if event_type == "RequestResponse" else 2
-            request_data = request.get("request_data", "")
+            request_data = request_body
             response_data = request.get("response_data", "")
             status = request.get("status", "pending")
         else:
@@ -224,6 +225,11 @@ class ControlPlaneDB(metaclass=SingletonMeta):
             request_data = ""
             response_data = ""
             status = "pending"
+
+        if isinstance(request_data, dict):
+            request_data = json.dumps(request_data)
+        if isinstance(response_data, dict):
+            response_data = json.dumps(response_data)
 
         async with self.db_connection() as db:
             async with db.cursor() as cur:
@@ -234,6 +240,9 @@ class ControlPlaneDB(metaclass=SingletonMeta):
         log("ControlPlaneDB", "update_lambda_request", request_id=request_id)
         status = payload.get("status")
         response_data = payload.get("response_data")
+        if isinstance(response_data, dict):
+            response_data = json.dumps(response_data)
+
         async with self.db_connection() as db:
             async with db.cursor() as cur:
                 await cur.execute("UPDATE requests SET status = %s, response_data = %s WHERE request_id = %s", (status, response_data, request_id))
