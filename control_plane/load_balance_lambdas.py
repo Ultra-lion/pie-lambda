@@ -1,6 +1,7 @@
 import datetime
 import httpx
 from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from urllib.parse import urlparse, unquote
 from control_plane_db import ControlPlaneDB
@@ -10,6 +11,8 @@ import uuid
 import os
 import time
 import datetime
+
+from utils import parse_timestamp
 
 from logger_utils import log
 
@@ -74,7 +77,7 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
     
     scaler_health = await control_plane_db.get_component_health("SCALER")
     if scaler_health:
-        last_heartbeat = datetime.datetime.strptime(scaler_health['last_heartbeat'], "%Y-%m-%d %H:%M:%S").timestamp()
+        last_heartbeat = parse_timestamp(scaler_health['last_heartbeat']).timestamp()
     else:
         last_heartbeat = 0
         
@@ -90,7 +93,7 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
     request_id = str(uuid.uuid4())
     log("LoadBalancer", "proxy_api_call", request_id=request_id)
     
-    await control_plane_db.create_lambda_request(request_id, lambda_func_name, request)
+    await control_plane_db.create_lambda_request(request_id, lambda_func_name, request, type)
     
     if type == "RequestResponse":
         try:
@@ -113,7 +116,10 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
 
     elif type == "Event":
         log("LoadBalancer", "proxy_api_call", request_id=request_id, status="event_type_accepted_202")
-        return 202
+        return JSONResponse(
+            content="Accepted",
+            status_code=202
+        )
     else:
         log("LoadBalancer", "proxy_api_call", request_id=request_id, status="invalid_type_error")
         raise ValueError("Invalid type")

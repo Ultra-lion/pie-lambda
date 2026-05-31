@@ -210,11 +210,11 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                 await cur.execute("DELETE FROM containers WHERE container_id = ANY(%s)", (container_ids,)) 
                 log("ControlPlaneDB", "remove_destroyed_containers", status="deleted")
 
-    async def create_lambda_request(self, request_id, lambda_func_name, request):
+    async def create_lambda_request(self, request_id, lambda_func_name, request, event_type):
         log("ControlPlaneDB", "create_lambda_request", request_id=request_id, lambda_name=lambda_func_name)
         if hasattr(request, "get"):
-            event_type = request.get("event_type", "RequestResponse")
-            priority = request.get("priority", 1)
+            event_type = event_type
+            priority = 1 if event_type == "RequestResponse" else 2
             request_data = request.get("request_data", "")
             response_data = request.get("response_data", "")
             status = request.get("status", "pending")
