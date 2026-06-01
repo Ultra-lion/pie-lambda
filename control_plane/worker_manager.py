@@ -5,7 +5,7 @@ from control_plane_db import ControlPlaneDB
 import asyncio
 import uvicorn
 import os
-
+import datetime
 
 from logger_utils import log
 
@@ -129,7 +129,13 @@ async def proxy_request(request: Request, request_id:str, lambda_name:str):
     global scaler_client
     available_lambda_ip = None
     available_lambda_event=None
+    availability_start_time = datetime.datetime.now()
     while not available_lambda_ip:
+        if datetime.datetime.now() - availability_start_time > datetime.timedelta(minutes=1):
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="The upstream server failed to respond in time."
+            )
         available_lambda_ip = next(iter(available_lambdas.get(lambda_name,{})),None)
         if not available_lambda_ip:
             await scaler_client.poke_scaler()

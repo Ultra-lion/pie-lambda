@@ -37,10 +37,12 @@ class LambdaQueueHandler:
                 )
             
             await self.control_plane_db.update_lambda_request(request_id, {"status": "success", "response_data": response.text})
-            
+        except (httpx.TimeoutException, httpx.ConnectError) as e:
+            log("EventHandler", "proxy_api_calls", status="retrying", error=str(e))
+            await self.control_plane_db.update_lambda_request(request_id, {"status": "pending", "response_data": f"System Busy: {str(e)}"})
         except Exception as e:
             log("EventHandler", "proxy_api_calls", error=str(e))
-            await self.control_plane_db.update_lambda_request(request_id, {"status": "failure", "response_data": str(e)})
+            await self.control_plane_db.update_lambda_request(request_id, {"status": "pending", "response_data": str(e)})
 
 
     async def handle_enqueued_events(self):
