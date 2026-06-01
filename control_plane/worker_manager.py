@@ -148,23 +148,25 @@ async def proxy_request(request: Request, request_id:str, lambda_name:str):
             else:
                 break
     
-    lambda_request_events[request_id]=asyncio.Event()
-    lambda_payload = await request.json()
-    if "request_id" not in lambda_payload:
-        lambda_payload['request_id'] =  request_id
-    lambda_request_payloads[available_lambda_ip] = lambda_payload
-    available_lambda_event.set()
+    lambda_request_events[request_id] = asyncio.Event()
     try:
+        lambda_payload = await request.json()
+        if "request_id" not in lambda_payload:
+            lambda_payload['request_id'] =  request_id
+        lambda_request_payloads[available_lambda_ip] = lambda_payload
+        available_lambda_event.set()
+        
         await asyncio.wait_for(lambda_request_events[request_id].wait(),timeout=60)
+        return lambda_request_responses.pop(request_id,None)
     except asyncio.TimeoutError:
-        lambda_request_events.pop(request_id,None)
         lambda_request_payloads.pop(available_lambda_ip,None)
-        lambda_request_responses.pop(request_id,None)
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="The upstream server failed to respond in time."
         )
-    return lambda_request_responses.pop(request_id,None)
+    finally:
+        lambda_request_events.pop(request_id,None)
+        lambda_request_responses.pop(request_id,None)
 
 
 @app.post("/register/container")

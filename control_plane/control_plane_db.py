@@ -290,7 +290,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                     (status = 'pending' AND event_type='RequestResponse' AND created_at > NOW() - INTERVAL '5 minutes')
                     OR (status = 'pending' AND event_type='Event' AND created_at > NOW() - INTERVAL '120 minutes')
                     GROUP BY lambda_name
-                    ORDER BY MIN(priority) DESC, MIN(created_at) ASC;
+                    ORDER BY MIN(priority) ASC, MIN(created_at) ASC;
                     """)
                     pending_requests = await cur.fetchall()
                     
