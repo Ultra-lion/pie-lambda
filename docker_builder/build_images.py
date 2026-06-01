@@ -143,44 +143,16 @@ def deploy_control_plane_docker(config:dict):
     
     host_socket = get_host_docker_socket()
     
-    ca_path = os.path.abspath("certs")
-    control_plane_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "control_plane"))
-    
+    ca_path = os.path.abspath("certs")    
     ca_cert_file = os.path.join(ca_path, "ca.crt")
-    server_cert_file = os.path.join(ca_path, "server.crt")
-    server_key_file = os.path.join(ca_path, "server.key")
-
+    
     volumes = {
         host_socket:{
             'bind':'/var/run/docker.sock',
             'mode':'rw'
-        },
-        control_plane_path:{
-            'bind':'/app/control_plane',
-            'mode':'rw'
-        },
-        ca_cert_file:{
-            'bind':'/etc/ssl/certs/ca.crt',
-            'mode':'ro'
-        },
-        server_cert_file:{
-            'bind':'/app/control_plane/server.crt',
-            'mode':'ro'
-        },
-        server_key_file:{
-            'bind':'/app/control_plane/server.key',
-            'mode':'ro'
         }
     }
     
-    # client.containers.run(
-    #     image=control_plane_docker_image,
-    #     name="pie-lambda-control-plane",
-    #     network=BASE_NETWORK_BRIDGE,
-    #     volumes=volumes,
-    #     detach=True,
-    #     extra_hosts={"host.docker.internal":"host-gateway"}
-    # )
     control_plane_container = client.containers.create(
         image=control_plane_docker_image,
         name="pie-lambda-control-plane",
@@ -189,15 +161,26 @@ def deploy_control_plane_docker(config:dict):
         detach=True,
         extra_hosts={"host.docker.internal":"host-gateway"}
     )
-
-    stream = io.BytesIO()
-    with tarfile.open(fileobj=stream, mode='w') as tar:
-        with open('ca.crt', 'rb') as f:
+    ca_stream = io.BytesIO()
+    with tarfile.open(fileobj=ca_stream, mode='w') as tar:
+        with open(ca_cert_file, 'rb') as f:
             info = tarfile.TarInfo(name='ca.crt')
-            info.size = os.path.getsize('ca.crt')
+            info.size = os.path.getsize(ca_cert_file)
             tar.addfile(info, f)
+    control_plane_container.put_archive('/etc/ssl/certs/', ca_stream.getvalue())
     
-    control_plane_container.put_archive('/etc/ssl/certs/', stream.getvalue())
+    # 2. Prepare and push ALL CP certs to the app directory
+    certs_stream = io.BytesIO()
+    with tarfile.open(fileobj=certs_stream, mode='w') as tar:
+        for filename in ['ca.crt', 'server.crt', 'server.key', 'ca.key']:
+            file_path = os.path.join(ca_path, filename)
+            if os.path.exists(file_path):
+                info = tarfile.TarInfo(name=filename)
+                info.size = os.path.getsize(file_path)
+                with open(file_path, 'rb') as f:
+                    tar.addfile(info, f)
+    
+    control_plane_container.put_archive('/app/control_plane/', certs_stream.getvalue())
     
     # NOW start it
     control_plane_container.start()
