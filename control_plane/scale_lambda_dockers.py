@@ -154,10 +154,8 @@ class LambdaScaler:
     
     def get_docker_containers(self):
         return self.docker_client.containers.list()
-  
-    #     return stopped_pie_lambda_containers
+
     def get_destroy_dead_pie_lambda_dockers(self):
-        # 1. Broad filter for potentially dead containers
         unhealthy_statuses = ['exited', 'dead', 'created']
         all_containers = self.docker_client.containers.list(all=True)
         reaped = []
