@@ -1,5 +1,5 @@
 import logging
-import time
+import json
 import os
 
 # Custom formatter to match the requested format
@@ -16,16 +16,24 @@ ch = logging.StreamHandler()
 ch.setFormatter(PieLambdaFormatter())
 logger.addHandler(ch)
 
+config = {}
+
+try:
+    with open("config.json", "r") as f:
+        config = json.load(f)
+except Exception:
+    pass
+
 funcs_to_print_data_for = [
     # "ipc_server.handle_poke", 
     # "ipc_server.handle_poke_back",
     # "proxy_api_call",
     # "scaler_main_process",
     # "scale_up_lambda",
-    "proxy_request",
+    # "proxy_request",
 ]
 
-print_all = True
+print_all = os.getenv("ENABLE_INTERNAL_LOGGING", "false").lower() == "true"
 
 def log(service, function, **datapoints):
     if print_all or function in funcs_to_print_data_for:
