@@ -30,5 +30,7 @@
     "// --- Default Lambda Worker Credentials ---": "",
     "lambda_default_region": "us-east-1",
     "lambda_default_access_key_id": "test",
-    "lambda_default_secret_access_key": "test"
+    "lambda_default_secret_access_key": "test",
+    "db_type": "disk",
+    "db_path": "./pgdata"
 }
