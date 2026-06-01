@@ -29,8 +29,6 @@ RUN npm install @electric-sql/pglite @electric-sql/pglite-socket
 # This ensures that internal imports like 'from control_plane.control_plane_db import ...' work correctly
 COPY . /app/control_plane/
 
-COPY config.json /app/control_plane/config.json
-
 WORKDIR /app/control_plane/
 
 RUN pip install --no-cache-dir -r requirements.txt

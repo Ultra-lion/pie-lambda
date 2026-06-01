@@ -181,6 +181,15 @@ def deploy_control_plane_docker(config:dict):
                     tar.addfile(info, f)
     
     control_plane_container.put_archive('/app/control_plane/', certs_stream.getvalue())
+
+    config_file_path = config.get("config_file_path")
+    config_stream = io.BytesIO()
+    with tarfile.open(fileobj=config_stream, mode='w') as tar:
+        with open(config_file_path, 'rb') as f:
+            info = tarfile.TarInfo(name='config.json')
+            info.size = os.path.getsize(config_file_path)
+            tar.addfile(info, f)
+    control_plane_container.put_archive('/app/control_plane/', config_stream.getvalue())
     
     # NOW start it
     control_plane_container.start()
@@ -250,7 +259,7 @@ def deploy(config:dict):
     deploy_control_plane_docker(config)
 
 
-def teardown(config:dict):
+def teardownall(config:dict):
 
     all_images = client.images.list()
     matching_images = []
@@ -297,8 +306,37 @@ def teardown(config:dict):
     except Exception as e:
         print(f"Could Not remove Network {BASE_NETWORK_BRIDGE} Error: {e}")
     
-    
+def teardowncontainers(config:dict):
+    all_images = client.images.list()
+    matching_images = []
+    for image in all_images:
+        for tag in image.tags:
+            if BASE_SUBSTR.lower() in tag.lower():
+                matching_images.append(image)
+                break
 
+    matching_containers = []
+    all_containers_list = client.containers.list(all=True)
+    for image in matching_images:
+        for container in all_containers_list:
+            if image.id == container.image.id:
+                matching_containers.append(container)
+                break
+    
+    for container in matching_containers:
+        try:
+            container.reload()
+            if container.status == "running":
+                container.stop(timeout=2)
+            
+        except Exception as e:
+            print(f"Could Not stop container {container.name} Error: {e}")
+
+        try:
+            container.remove(force=True)
+        except Exception as e:
+            print(f"Could Not remove container {container.name} Error: {e}")
+    
 def shutdown(config:dict):
     all_images = client.images.list()
     matching_images = []

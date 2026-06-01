@@ -13,7 +13,15 @@ import docker
 import certifi
 import shutil
 
-from docker_builder.build_images import build, deploy, shutdown, teardown, run_existing, rebuildlambdas
+from docker_builder.build_images import (
+    build, 
+    deploy, 
+    shutdown, 
+    teardownall, 
+    run_existing, 
+    rebuildlambdas,
+    teardowncontainers
+)
 
 
 def generate_master_ca():
@@ -128,7 +136,15 @@ if __name__=="__main__":
     
     parser.add_argument("--command", 
                         dest="command", 
-                        choices=["build", "rebuildlambdas", "deploy", "teardown", "shutdown", "RunExisting"],
+                        choices=[
+                            "build", 
+                            "rebuildlambdas", 
+                            "teardownall", 
+                            "deploy", 
+                            "teardowncontainers",
+                            "shutdown", 
+                            "runexisting"
+                            ],
                         default="build",
                         help="Action to perform")
     args = parser.parse_args()
@@ -153,6 +169,8 @@ if __name__=="__main__":
 
     generate_certs()
     
+    config["config_file_path"] = config_file_path
+
     match command:
         case "build":
             build(config)
@@ -160,8 +178,10 @@ if __name__=="__main__":
             rebuildlambdas(config)
         case "deploy":
             deploy(config)
-        case "teardown":
-            teardown(config)
+        case "teardowncontainers":
+            teardowncontainers(config)
+        case "teardownall":
+            teardownall(config)
         case "shutdown":
             shutdown(config)
         case "runexisting":
