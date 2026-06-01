@@ -41,7 +41,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 53: The DNS server (UDP is critical for DNS)
 EXPOSE 443 53/udp 53/tcp
 
+STOPSIGNAL SIGINT
 
-
-# Launch the orchestrator
-CMD ["python", "run_control_plane.py"]
+ENTRYPOINT ["python", "run_control_plane.py"]

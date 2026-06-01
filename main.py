@@ -13,7 +13,7 @@ import docker
 import certifi
 import shutil
 
-from docker_builder.build_images import build, deploy, shutdown, teardown, run_existing, buildlambdas
+from docker_builder.build_images import build, deploy, shutdown, teardown, run_existing, rebuildlambdas
 
 
 def generate_master_ca():
@@ -128,7 +128,7 @@ if __name__=="__main__":
     
     parser.add_argument("--command", 
                         dest="command", 
-                        choices=["build", "buildlambdas", "deploy", "teardown", "shutdown", "RunExisting"],
+                        choices=["build", "rebuildlambdas", "deploy", "teardown", "shutdown", "RunExisting"],
                         default="build",
                         help="Action to perform")
     args = parser.parse_args()
@@ -156,13 +156,13 @@ if __name__=="__main__":
     match command:
         case "build":
             build(config)
-        case "buildlambdas":
-            buildlambdas(config)
+        case "rebuildlambdas":
+            rebuildlambdas(config)
         case "deploy":
             deploy(config)
         case "teardown":
             teardown(config)
         case "shutdown":
             shutdown(config)
-        case "RunExisting":
+        case "runexisting":
             run_existing(config)

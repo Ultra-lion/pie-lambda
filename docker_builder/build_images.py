@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from .validators import LambdaImageConfig
 from typing import List
 import sys
+import io, tarfile
 
 from control_plane.utils import BASE_SUBSTR, BASE_NETWORK_BRIDGE
 
@@ -98,6 +99,16 @@ def setup_docker_network_bridge():
 
 def build_control_plane_docker():
     
+    existing_control_plane_container = client.containers.get("pie-lambda-control-plane")
+    if existing_control_plane_container:
+        existing_control_plane_container.stop()
+        existing_control_plane_container.remove()
+
+    existing_control_plane_image = client.images.get(f"{BASE_SUBSTR}-control-plane:latest")
+    if existing_control_plane_image:
+        existing_control_plane_image.remove()
+
+
     image, build_logs = client.images.build(
         path="control_plane",
         tag=f"{BASE_SUBSTR}-control-plane:latest",
@@ -162,9 +173,16 @@ def deploy_control_plane_docker(config:dict):
         }
     }
     
-    client.containers.run(
+    # client.containers.run(
+    #     image=control_plane_docker_image,
+    #     name="pie-lambda-control-plane",
+    #     network=BASE_NETWORK_BRIDGE,
+    #     volumes=volumes,
+    #     detach=True,
+    #     extra_hosts={"host.docker.internal":"host-gateway"}
+    # )
+    control_plane_container = client.containers.create(
         image=control_plane_docker_image,
-        # command="tail -f /dev/null",
         name="pie-lambda-control-plane",
         network=BASE_NETWORK_BRIDGE,
         volumes=volumes,
@@ -172,7 +190,72 @@ def deploy_control_plane_docker(config:dict):
         extra_hosts={"host.docker.internal":"host-gateway"}
     )
 
-def buildlambdas(config):
+    stream = io.BytesIO()
+    with tarfile.open(fileobj=stream, mode='w') as tar:
+        with open('ca.crt', 'rb') as f:
+            info = tarfile.TarInfo(name='ca.crt')
+            info.size = os.path.getsize('ca.crt')
+            tar.addfile(info, f)
+    
+    control_plane_container.put_archive('/etc/ssl/certs/', stream.getvalue())
+    
+    # NOW start it
+    control_plane_container.start()
+
+
+def teardown_lambda_functions(config:dict):
+    all_images = client.images.list()
+    matching_images = []
+    lambda_funcs_to_deploy = config.get("lambda_funcs_to_deploy")
+    lambda_names = [lambda_config["func_name"] for lambda_config in lambda_funcs_to_deploy.values()]
+    
+    for lambda_name in lambda_names:
+        for image in all_images:
+            for tag in image.tags:
+                if lambda_name.lower() in tag.lower():
+                    matching_images.append(image)
+                    break
+
+    matching_containers = []
+    all_containers_list = client.containers.list(all=True)
+    for image in matching_images:
+        for container in all_containers_list:
+            if image.id == container.image.id:
+                matching_containers.append(container)
+                break
+    
+    for container in matching_containers:
+        try:
+            container.reload()
+            if container.status == "running":
+                container.stop(timeout=2)
+            
+        except Exception as e:
+            print(f"Could Not stop container {container.name} Error: {e}")
+
+        try:
+            container.remove(force=True)
+        except Exception as e:
+            print(f"Could Not remove container {container.name} Error: {e}")
+    
+    for image in matching_images:
+        try:
+            image.remove(force=True)
+        except Exception as e:
+            print(f"Could Not remove image {image.tags} Error: {e}")
+    
+    try:
+
+        network = client.networks.get(BASE_NETWORK_BRIDGE)
+        network.remove()
+    except docker.errors.NotFound:
+        pass
+    except Exception as e:
+        print(f"Could Not remove Network {BASE_NETWORK_BRIDGE} Error: {e}")
+    
+
+def rebuildlambdas(config):
+    teardown_lambda_functions(config)
     build_lambda_functions(config)
 
 def build(config:dict):

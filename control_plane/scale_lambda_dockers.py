@@ -18,7 +18,9 @@ from utils import get_local_ip, BASE_SUBSTR, BASE_NETWORK_BRIDGE
 class LambdaScaler:
     def __init__(self, config={}, individual_lambda_scale_limit=5):
         self.docker_client = docker.from_env()
-        self.individual_lambda_scale_limit = individual_lambda_scale_limit
+        # Excellence: Load global scaling limits from config if available
+        self.config = config
+        self.individual_lambda_scale_limit = config.get("global_scale_limit", individual_lambda_scale_limit)
         self.control_plane_db = ControlPlaneDB()
         self.IPC_event = asyncio.Event()
         self.loop = None
@@ -277,7 +279,18 @@ class LambdaScaler:
 
     
 async def main():
-    lambda_scaler = LambdaScaler()
+    # Excellence: Load the config file on startup
+    import json
+    config_path = os.getenv("CONFIG_PATH", "config.json")
+    config = {}
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+        except Exception as e:
+            print(f"Error loading config in Scaler: {e}")
+            
+    lambda_scaler = LambdaScaler(config=config)
     await asyncio.gather(
         lambda_scaler.scaler_main_process(), 
         lambda_scaler.ipc_server(),

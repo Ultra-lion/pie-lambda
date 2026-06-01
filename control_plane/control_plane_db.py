@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 import asyncio
 from logger_utils import log
 import json
-
+import os
 
 DEFAULT_CONTAINERS_LIMIT = 1
 
@@ -17,9 +17,16 @@ class SingletonMeta(type):
         return cls._instances[cls]
 
 class ControlPlaneDB(metaclass=SingletonMeta):
-    def __init__(self,individual_lambda_scale_limit=None):
-        self.individual_lambda_scale_limit = individual_lambda_scale_limit or DEFAULT_CONTAINERS_LIMIT
+    def __init__(self):
         self.pool = None
+        config_path = os.getenv("CONFIG_PATH", "config.json")
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                    self.individual_lambda_scale_limit = config.get("global_scale_limit")
+            except Exception:
+                pass
     
     async def create_pool(self):
             # 1. Back to clean string

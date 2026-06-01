@@ -30,6 +30,8 @@ def restart_process(name):
         return None
     env = os.environ.copy()
     env['CONTROL_PLANE_IP'] = os.getenv('CONTROL_PLANE_IP', '127.0.0.1')
+    # Excellence: Pass the config path down to components
+    env['CONFIG_PATH'] = os.getenv('CONFIG_PATH', 'config.json')
     # Start the process in the background
     return subprocess.Popen(cmd, env=env)
 
@@ -151,7 +153,17 @@ async def main():
     # 4. Start the Watchdog (Async - happens on the MAIN loop)
     # This blocks forever and keeps the loop alive
     try:
-        await watchdog_loop(processes)
+        # await watchdog_loop(processes)
+        stop_event = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, stop_event.set)
+        # ... then wait for the watchdog OR the stop event ...
+        watchdog_task = asyncio.create_task(watchdog_loop(processes))
+        done, pending = await asyncio.wait(
+            [watchdog_task, stop_event.wait()], 
+            return_when=asyncio.FIRST_COMPLETED
+        )
     finally:
         await db_manager.clear_control_plane_health_stats()
         # 5. Final Cleanup
