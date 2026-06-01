@@ -113,7 +113,7 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
                     url=f"http://127.0.0.1:80/proxy_request/{lambda_func_name}/{request_id}",
                     params=request.query_params,
                     json=payload_body,
-                    timeout=60
+                    timeout=60*LAMBDA_TIMEOUT
                 )
             
             log("LoadBalancer", "proxy_api_call", request_id=request_id, status="response_received", response_status=response.status_code)
