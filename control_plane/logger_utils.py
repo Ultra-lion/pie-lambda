@@ -33,7 +33,7 @@ funcs_to_print_data_for = [
     # "proxy_request",
 ]
 
-print_all = os.getenv("ENABLE_INTERNAL_LOGGING", "false").lower() == "true"
+print_all = os.getenv("enable_internal_logging", "false").lower() == "true"
 
 def log(service, function, **datapoints):
     if print_all or function in funcs_to_print_data_for:
