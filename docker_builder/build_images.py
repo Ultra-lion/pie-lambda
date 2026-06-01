@@ -99,14 +99,24 @@ def setup_docker_network_bridge():
 
 def build_control_plane_docker():
     
-    existing_control_plane_container = client.containers.get("pie-lambda-control-plane")
-    if existing_control_plane_container:
-        existing_control_plane_container.stop()
-        existing_control_plane_container.remove()
-
-    existing_control_plane_image = client.images.get(f"{BASE_SUBSTR}-control-plane:latest")
-    if existing_control_plane_image:
-        existing_control_plane_image.remove()
+    try:
+        existing_control_plane_container = client.containers.get("pie-lambda-control-plane")
+        if existing_control_plane_container:
+            existing_control_plane_container.stop()
+            existing_control_plane_container.remove()
+    except docker.errors.NotFound:
+        pass
+    except Exception as e:
+        raise e
+        
+    try:
+        existing_control_plane_image = client.images.get(f"{BASE_SUBSTR}-control-plane:latest")
+        if existing_control_plane_image:
+            existing_control_plane_image.remove()
+    except docker.errors.NotFound:
+        pass
+    except Exception as e:
+        raise e
 
 
     image, build_logs = client.images.build(

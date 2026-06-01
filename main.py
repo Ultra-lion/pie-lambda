@@ -101,12 +101,6 @@ def generate_master_bundle():
         f.write(system_bundle)
 
 
-def move_certs_to_control_plane():
-    os.system("cp certs/ca.crt control_plane/ca.crt")
-    os.system("cp certs/ca.key control_plane/ca.key")
-    os.system("cp certs/server.crt control_plane/server.crt")
-    os.system("cp certs/server.key control_plane/server.key")
-
 def generate_certs():
     if os.path.exists("certs"):
         shutil.rmtree("certs")
@@ -114,7 +108,6 @@ def generate_certs():
     generate_master_ca()
     generate_aws_impersonator_cert()
     generate_master_bundle()
-    move_certs_to_control_plane()
 
 def check_if_docker_running():
     try:
