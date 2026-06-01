@@ -1,14 +1,32 @@
 {
-    "lambda_funcs_to_deploy":{
-        "func1":{
-            "func_name":"ads",
-            "func_code_path":"/home/usr/igga",
-            "func_handler_file_name":"function.py",
-            "lambda_handler_function_name":"lambda_handler",
-            "lambda_language":"python",
-            "override_base_image_for_lambda":"docker pull amazon/aws-lambda-python:latest-x86_64",
-            "function_arn":"", # optional, if being used by client backend
-            
+    "lambda_funcs_to_deploy": {
+        "example-function": {
+            "func_name": "example-function",
+            "func_code_path": "./functions/hello_world",
+            "func_handler_file_name": "handler.py",
+            "lambda_handler_function_name": "lambda_handler",
+            "lambda_language": "python" # for now only python is supported
         }
-    }
+    },
+    "// --- System Scaling Settings ---": "",
+    "global_scale_limit": 5,
+    "available_container_scale_down_time": 5,
+    "busy_container_scale_down_time": 30,
+    "provisioning_container_scale_down_time": 1,
+    "created_container_stuck_time_mins": 2,
+    "docker_sdk_check_interval_mins": 0.5,
+    "// --- Request & Reliability Settings ---": "",
+    "lambda_timeout_mins": 5,
+    "rr_stuck_time": 5, # RequestResponse type lambda requests stuck time for cleanout applicability in mins
+    "event_stuck_time": 15, # Event type lambda requests stuck time for cleanout applicability in mins
+    "// --- Internal Self-Healing (Watchdog) ---": "",
+    "watchdog_loop_time": 10,
+    "process_kill_time": 10,
+    "startup_time_limit": 20,
+    "watchdog_failure_limit": 15,
+    "failure_reset_limit": 1000,
+    "// --- Default Lambda Worker Credentials ---": "",
+    "lambda_default_region": "us-east-1",
+    "lambda_default_access_key_id": "test",
+    "lambda_default_secret_access_key": "test"
 }
