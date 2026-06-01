@@ -141,7 +141,14 @@ async def proxy_request(request: Request, request_id:str, lambda_name:str):
             await scaler_client.poke_scaler()
             await asyncio.sleep(0.1)
         else:
-            available_lambda_event = available_lambdas[lambda_name].pop(available_lambda_ip,None)
+            available_lambda_tuple = available_lambdas[lambda_name].pop(available_lambda_ip,None)
+            if not available_lambda_tuple:
+                available_lambda_ip=None
+                continue
+            available_lambda_event, lambda_connection_request = available_lambda_tuple
+            if await lambda_connection_request.is_disconnected():
+                available_lambda_ip=None
+                continue
             if not available_lambda_event:
                 available_lambda_ip=None
                 continue
@@ -206,7 +213,7 @@ async def runtime_invocation_next(request: Request):
                     log("WorkerManager", "registration", status="disconnected", ip=lambda_ip)
                     return None
                 try:
-                    await asyncio.wait_for(event.wait(), timeout=0.1)
+                    await asyncio.wait_for(event.wait(), timeout=0.5)
                     event.clear()
                     del lambdas_pending_registration[lambda_ip]
                     break
@@ -225,7 +232,7 @@ async def runtime_invocation_next(request: Request):
     lambda_name = registered_lambdas[lambda_ip]
     if lambda_name not in available_lambdas:
         available_lambdas[lambda_name]={}
-    available_lambdas[lambda_name][lambda_ip] = asyncio.Event()
+    available_lambdas[lambda_name][lambda_ip] = (asyncio.Event(), request)
     
     event = available_lambdas.get(lambda_name,{}).get(lambda_ip,None)
 
