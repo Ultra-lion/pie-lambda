@@ -53,7 +53,7 @@ class LambdaScaler:
                 "AWS_DEFAULT_REGION": "us-east-1",
                 "AWS_ACCESS_KEY_ID": "test",
                 "AWS_SECRET_ACCESS_KEY": "test",
-                "AWS_CA_BUNDLE": "/tmp/ca.crt"
+                "AWS_CA_BUNDLE": "/tmp/ca.crt",
                 
             },
             extra_hosts={"host.docker.internal": "host-gateway"}
