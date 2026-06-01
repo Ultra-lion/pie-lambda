@@ -10,6 +10,14 @@ import signal
 
 from utils import get_local_ip, parse_timestamp
 
+config = {}
+
+try:
+    with open('config.json', 'r') as f:
+        config = json.load(f)
+except Exception:
+    pass
+
 from control_plane_db import ControlPlaneDB
 COMPONENT_COMMANDS = {
     "LOAD_BALANCER": [sys.executable, "load_balance_lambdas.py"],
@@ -38,12 +46,12 @@ def restart_process(name):
 
 
 
-WATCHDOG_LOOP_TIME = 50
-PROCESS_KILL_TIME = 100
-STARTUP_TIME_LIMIT=30
+WATCHDOG_LOOP_TIME = config.get("watchdog_loop_time", 10)
+PROCESS_KILL_TIME = config.get("process_kill_time", 10)
+STARTUP_TIME_LIMIT=config.get("startup_time_limit", 20)
 
-WATCHDOG_FAILURE_LIMIT = 3*len(COMPONENT_COMMANDS)
-FAILURE_RESET_LIMIT = 1000
+WATCHDOG_FAILURE_LIMIT = config.get("watchdog_failure_limit", 3*len(COMPONENT_COMMANDS))
+FAILURE_RESET_LIMIT = config.get("failure_reset_limit", 10)
 
 
 async def watchdog_loop(processes):

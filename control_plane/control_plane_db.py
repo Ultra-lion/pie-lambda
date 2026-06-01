@@ -20,6 +20,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
     def __init__(self):
         self.pool = None
         config_path = os.getenv("CONFIG_PATH", "config.json")
+        config = {}
         self.individual_lambda_scale_limit=5 
         self.rr_stuck_time=5
         self.event_stuck_time=15
@@ -32,6 +33,11 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                     self.event_stuck_time = config.get("event_stuck_time", 15)
             except Exception:
                 pass
+        
+        self.available_container_scale_down_time = config.get("available_container_scale_down_time", 5)
+        self.busy_container_scale_down_time = config.get("busy_container_scale_down_time", 30)
+        self.provisioning_container_scale_down_time = config.get("provisioning_container_scale_down_time", 1)
+      
     
     async def create_pool(self):
             # 1. Back to clean string
@@ -202,14 +208,14 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                 (
                 SELECT container_id FROM containers 
                 WHERE 
-                    (status = 'available' AND COALESCE(last_used_at, created_at) < NOW() - INTERVAL '5 minutes')
+                    (status = 'available' AND COALESCE(last_used_at, created_at) < NOW() - INTERVAL '{} minutes')
                 OR 
-                    (status = 'busy' AND COALESCE(last_used_at, created_at) < NOW() - INTERVAL '30 minutes')
+                    (status = 'busy' AND COALESCE(last_used_at, created_at) < NOW() - INTERVAL '{} minutes')
                 OR 
-                    (status = 'provisioning' AND COALESCE(last_used_at, created_at) < NOW() - INTERVAL '1 minutes')
+                    (status = 'provisioning' AND COALESCE(last_used_at, created_at) < NOW() - INTERVAL '{} minutes')
                 )
                 RETURNING *;
-                """)
+                """.format(self.available_container_scale_down_time, self.busy_container_scale_down_time, self.provisioning_container_scale_down_time))
                 rows = await cur.fetchall()
                 log("ControlPlaneDB", "get_containers_to_destroy", found_count=len(rows))
                 return rows

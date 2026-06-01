@@ -15,7 +15,15 @@ from utils import parse_timestamp
 
 from logger_utils import log
 
+config = {}
 
+try:
+    with open("config.json", "r") as f:
+        config = json.load(f)
+except Exception:
+    pass
+
+LAMBDA_TIMEOUT = config.get("lambda_timeout_mins", 5)
 
 control_plane_db = None
 
@@ -112,6 +120,7 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
             await control_plane_db.update_lambda_request(request_id, {"status": "success", "response_data": response.text})
             return response.content
         except Exception as e:
+            await control_plane_db.update_lambda_request(request_id, {"status": "failed", "response_data": str(e)})
             raise e
 
     elif type == "Event":

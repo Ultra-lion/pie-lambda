@@ -22,6 +22,10 @@ class LambdaScaler:
         self.config = config
         self.individual_lambda_scale_limit = config.get("global_scale_limit", individual_lambda_scale_limit)
         self.created_container_stuck_time_mins = config.get("created_container_stuck_time_mins", 2)
+        self.lambda_default_region = config.get("lambda_default_region", "us-east-1")
+        self.lambda_default_access_key_id = config.get("lambda_default_access_key_id", "test")
+        self.lambda_default_secret_access_key = config.get("lambda_default_secret_access_key", "test")
+        self.docker_sdk_check_interval_mins = config.get("docker_sdk_check_interval_mins", 0.5)
         self.control_plane_db = ControlPlaneDB()
         self.IPC_event = asyncio.Event()
         self.loop = None
@@ -53,9 +57,9 @@ class LambdaScaler:
             environment={
                 "AWS_LAMBDA_RUNTIME_API": f"{control_plane_ip}",
                 "LAMBDA_FUNC_NAME": lambda_func_name,
-                "AWS_DEFAULT_REGION": "us-east-1",
-                "AWS_ACCESS_KEY_ID": "test",
-                "AWS_SECRET_ACCESS_KEY": "test",
+                "AWS_DEFAULT_REGION": self.lambda_default_region,
+                "AWS_ACCESS_KEY_ID": self.lambda_default_access_key_id,
+                "AWS_SECRET_ACCESS_KEY": self.lambda_default_secret_access_key,
                 "AWS_CA_BUNDLE": "/tmp/ca.crt",
                 
             },
@@ -192,7 +196,7 @@ class LambdaScaler:
         await self.control_plane_db.remove_destroyed_containers(container_ids_to_delete)
 
     async def check_docker_container_sdk(self):
-        if self.docker_sdk_check_time is None or self.docker_sdk_check_time < datetime.now() - timedelta(seconds=30):
+        if self.docker_sdk_check_time is None or self.docker_sdk_check_time < datetime.now() - timedelta(minutes=self.docker_sdk_check_interval_mins):
             log("Scaler", "check_docker_container_sdk", status="starting_sync")
             living_dockers = await asyncio.to_thread(self.get_docker_containers)
             self.docker_sdk_check_time = datetime.now()

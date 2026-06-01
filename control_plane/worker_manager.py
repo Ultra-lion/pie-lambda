@@ -6,11 +6,20 @@ import asyncio
 import uvicorn
 import os
 import datetime
+import json
 
 from logger_utils import log
 
+config = {}
 
-LAMBDA_TIMEOUT = 300000
+try:
+    with open("config.json", "r") as f:
+        config = json.load(f)
+except Exception:
+    pass
+
+
+LAMBDA_TIMEOUT = config.get("lambda_timeout_mins", 5)
 
 control_plane_db = None
 
@@ -131,7 +140,7 @@ async def proxy_request(request: Request, request_id:str, lambda_name:str):
     available_lambda_event=None
     availability_start_time = datetime.datetime.now()
     while not available_lambda_ip:
-        if datetime.datetime.now() - availability_start_time > datetime.timedelta(minutes=1):
+        if datetime.datetime.now() - availability_start_time > datetime.timedelta(minutes=LAMBDA_TIMEOUT):
             raise HTTPException(
                 status_code=status.HTTP_504_GATEWAY_TIMEOUT,
                 detail="The upstream server failed to respond in time."
@@ -154,7 +163,10 @@ async def proxy_request(request: Request, request_id:str, lambda_name:str):
                 continue
             else:
                 break
-    
+    availibility_end_time = datetime.datetime.now()
+    availability_time_taken_seconds = (availibility_end_time - availability_start_time).total_seconds()
+    log("Worker Manager", "proxy_request", availability_time_taken_seconds=availability_time_taken_seconds)
+
     lambda_request_events[request_id] = asyncio.Event()
     try:
         lambda_payload = await request.json()
@@ -163,7 +175,7 @@ async def proxy_request(request: Request, request_id:str, lambda_name:str):
         lambda_request_payloads[available_lambda_ip] = lambda_payload
         available_lambda_event.set()
         
-        await asyncio.wait_for(lambda_request_events[request_id].wait(),timeout=60)
+        await asyncio.wait_for(lambda_request_events[request_id].wait(),timeout=(LAMBDA_TIMEOUT*60 - availability_time_taken_seconds))
         return lambda_request_responses.pop(request_id,None)
     except asyncio.TimeoutError:
         lambda_request_payloads.pop(available_lambda_ip,None)
@@ -267,7 +279,7 @@ async def runtime_invocation_next(request: Request):
             raise HTTPException(status_code=422, detail="unprocessable entity")
         headers = {
             "Lambda-Runtime-Aws-Request-Id": str(request_id),
-            "Lambda-Runtime-Deadline-Ms": str(LAMBDA_TIMEOUT), # Example: 5 minutes from now
+            "Lambda-Runtime-Deadline-Ms": str(LAMBDA_TIMEOUT * 60 * 1000), # Example: 5 minutes from now
         }
         await control_plane_db.update_lambda_request(request_id, {"status": "in_progress"})
         return JSONResponse(content=lambda_payload, headers=headers)
