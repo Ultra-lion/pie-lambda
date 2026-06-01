@@ -49,7 +49,12 @@ class LambdaScaler:
             dns=[control_plane_ip],
             environment={
                 "AWS_LAMBDA_RUNTIME_API": f"{control_plane_ip}",
-                "LAMBDA_FUNC_NAME": lambda_func_name
+                "LAMBDA_FUNC_NAME": lambda_func_name,
+                "AWS_DEFAULT_REGION": "us-east-1",
+                "AWS_ACCESS_KEY_ID": "test",
+                "AWS_SECRET_ACCESS_KEY": "test",
+                "AWS_CA_BUNDLE": "/tmp/ca.crt"
+                
             },
             extra_hosts={"host.docker.internal": "host-gateway"}
         )
@@ -63,7 +68,7 @@ class LambdaScaler:
                 f.seek(0)
                 tar.addfile(info, f)
         # 3. Push and Start
-        container.put_archive('/etc/ssl/certs/', stream.getvalue()) # or /etc/custom-ssl/
+        container.put_archive('/tmp/', stream.getvalue()) # or /etc/custom-ssl/
         
         container.start()
         
