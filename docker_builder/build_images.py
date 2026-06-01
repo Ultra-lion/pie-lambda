@@ -71,11 +71,6 @@ def build_lambda_functions(config:dict):
         LambdaImageConfig.model_validate(func_config)
     
     build_lambda_dockers(lambda_funcs_to_deploy)
-
-    print("printing image tags")
-
-    for img in client.images.list():
-        print(img.tags)
         
 
     
@@ -159,6 +154,10 @@ def deploy_control_plane_docker(config:dict):
     volumes = {
         host_socket:{
             'bind':'/var/run/docker.sock',
+            'mode':'rw'
+        },
+        "/home/rohan/Desktop/FUN-Projects/pie-lambda/control_plane":{
+            'bind':'/app/control_plane',
             'mode':'rw'
         }
     }

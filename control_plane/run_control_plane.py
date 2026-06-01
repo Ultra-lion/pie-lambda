@@ -168,8 +168,9 @@ async def main():
             loop.add_signal_handler(sig, stop_event.set)
         # ... then wait for the watchdog OR the stop event ...
         watchdog_task = asyncio.create_task(watchdog_loop(processes))
+        stop_task = asyncio.create_task(stop_event.wait())
         done, pending = await asyncio.wait(
-            [watchdog_task, stop_event.wait()], 
+            [watchdog_task, stop_task], 
             return_when=asyncio.FIRST_COMPLETED
         )
     finally:
