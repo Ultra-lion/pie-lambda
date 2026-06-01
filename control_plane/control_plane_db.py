@@ -20,11 +20,16 @@ class ControlPlaneDB(metaclass=SingletonMeta):
     def __init__(self):
         self.pool = None
         config_path = os.getenv("CONFIG_PATH", "config.json")
+        self.individual_lambda_scale_limit=5 
+        self.rr_stuck_time=5
+        self.event_stuck_time=15
         if os.path.exists(config_path):
             try:
                 with open(config_path, 'r') as f:
                     config = json.load(f)
-                    self.individual_lambda_scale_limit = config.get("global_scale_limit")
+                    self.individual_lambda_scale_limit = config.get("global_scale_limit", 5)
+                    self.rr_stuck_time = config.get("rr_stuck_time", 5)
+                    self.event_stuck_time = config.get("event_stuck_time", 15)
             except Exception:
                 pass
     
@@ -258,16 +263,17 @@ class ControlPlaneDB(metaclass=SingletonMeta):
     async def delete_stuck_requests(self):
         async with self.db_connection() as db:
             async with db.cursor() as cur:
+                log("ControlPlaneDB", "delete_stuck_requests", rr_stuck_time=self.rr_stuck_time, event_stuck_time=self.event_stuck_time)
                 await cur.execute("""
                     UPDATE requests 
                     SET status = 'failed'
                     WHERE request_id IN (
                         SELECT request_id FROM requests 
                         WHERE 
-                        (status IN ('pending', 'in_progress') AND event_type='RequestResponse' AND created_at < NOW() - INTERVAL '5 minutes')
-                        OR (status IN ('pending', 'in_progress') AND event_type='Event' AND created_at < NOW() - INTERVAL '120 minutes')
+                        (status IN ('pending', 'in_progress') AND event_type='RequestResponse' AND created_at < NOW() - INTERVAL '{} minutes')
+                        OR (status IN ('pending', 'in_progress') AND event_type='Event' AND created_at < NOW() - INTERVAL '{} minutes')
                     )
-                """)
+                """.format(self.rr_stuck_time, self.event_stuck_time))
 
     async def get_all_containers(self):
         log("ControlPlaneDB", "get_all_containers")
@@ -294,11 +300,11 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                     SELECT lambda_name, COUNT(*) as required_containers
                     FROM requests
                     WHERE 
-                    (status = 'pending' AND event_type='RequestResponse' AND created_at > NOW() - INTERVAL '5 minutes')
-                    OR (status = 'pending' AND event_type='Event' AND created_at > NOW() - INTERVAL '120 minutes')
+                    (status = 'pending' AND event_type='RequestResponse' AND created_at > NOW() - INTERVAL '{} minutes')
+                    OR (status = 'pending' AND event_type='Event' AND created_at > NOW() - INTERVAL '{} minutes')
                     GROUP BY lambda_name
                     ORDER BY MIN(priority) ASC, MIN(created_at) ASC;
-                    """)
+                    """.format(self.rr_stuck_time, self.event_stuck_time))
                     pending_requests = await cur.fetchall()
                     
                     await cur.execute("SELECT lambda_name, status, COUNT(*) as container_count FROM containers WHERE status IN ('available','provisioning', 'busy') GROUP BY lambda_name, status")

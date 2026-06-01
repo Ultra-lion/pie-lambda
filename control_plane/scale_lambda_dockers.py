@@ -21,6 +21,7 @@ class LambdaScaler:
         # Excellence: Load global scaling limits from config if available
         self.config = config
         self.individual_lambda_scale_limit = config.get("global_scale_limit", individual_lambda_scale_limit)
+        self.created_container_stuck_time_mins = config.get("created_container_stuck_time_mins", 2)
         self.control_plane_db = ControlPlaneDB()
         self.IPC_event = asyncio.Event()
         self.loop = None
@@ -150,19 +151,41 @@ class LambdaScaler:
     def get_docker_containers(self):
         return self.docker_client.containers.list()
 
-    def get_destroy_dead_pie_lambda_dockers(self):
-        stopped_containers = self.docker_client.containers.list(all=True, filters={'status': 'exited'})
-        stopped_pie_lambda_containers = []
-        for container in stopped_containers:
-            if container.image.tags:
-                for tag in container.image.tags:
-                    if BASE_SUBSTR.lower() in tag.lower():
-                        container.remove()
-                        stopped_pie_lambda_containers.append(container)
-                        break
+    # def get_destroy_dead_pie_lambda_dockers(self):
+    #     stopped_containers = self.docker_client.containers.list(all=True, filters={'status': 'exited'})
+    #     stopped_pie_lambda_containers = []
+    #     for container in stopped_containers:
+    #         if container.image.tags:
+    #             for tag in container.image.tags:
+    #                 if BASE_SUBSTR.lower() in tag.lower():
+    #                     container.remove()
+    #                     stopped_pie_lambda_containers.append(container)
+    #                     break
         
-        return stopped_pie_lambda_containers
-    
+    #     return stopped_pie_lambda_containers
+    def get_destroy_dead_pie_lambda_dockers(self):
+        # 1. Broad filter for potentially dead containers
+        unhealthy_statuses = ['exited', 'dead', 'created']
+        all_containers = self.docker_client.containers.list(all=True)
+        reaped = []
+
+        for container in all_containers:
+            if "control-plane" in container.name:
+                continue
+
+            if any(BASE_SUBSTR.lower() in tag.lower() for tag in (container.image.tags or [])):
+                if container.status in unhealthy_statuses:
+                    try:
+                        created_at = datetime.fromisoformat(container.attrs['Created'][:19])
+                        if container.status == 'created' and (datetime.utcnow() - created_at < timedelta(minutes=self.created_container_stuck_time_mins)):
+                            continue
+                        container.remove(force=True)
+                        reaped.append(container)
+                    except Exception as e:
+                        log("Scaler", "reaper.safety_check", error=str(e))
+        
+        return reaped
+
     async def delete_exited_pie_lambda_containers(self):
         stopped_pie_lambda_containers = await asyncio.to_thread(self.get_destroy_dead_pie_lambda_dockers)
         container_ids_to_delete = [container.id for container in stopped_pie_lambda_containers]

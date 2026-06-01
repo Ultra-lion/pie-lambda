@@ -137,7 +137,7 @@ if __name__=="__main__":
     command = args.command
     # Checking if the default (or provided) config actually exists
     if not os.path.exists(config_file_path):
-        print(f"🐶 Oops! Config file not found at: {os.path.abspath(config_file_path)}")
+        print(f" Oops! Config file not found at: {os.path.abspath(config_file_path)}")
         print("Tip: Make sure you have a 'config.json' in your root directory.")
         exit(1)
     with open(config_file_path, "r") as f:
