@@ -21,15 +21,6 @@ LAMBDA_TIMEOUT = config.get("lambda_timeout_mins", 5)
 class LambdaQueueHandler:
     def __init__(self):
         self.control_plane_db = ControlPlaneDB()
-        self.limit = httpx.Limits(max_connections=500, max_keepalive_connections=100)
-        self.https_client = None
-    
-    async def __aenter__(self):
-        self.https_client = httpx.AsyncClient(limits=self.limit, timeout=30)
-        return self
-    
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.https_client.close()
 
     async def proxy_api_calls(self, lamdba_name, payload, request_id):
         log("EventHandler", "proxy_api_calls", lambda_name=lamdba_name, request_id=request_id)
