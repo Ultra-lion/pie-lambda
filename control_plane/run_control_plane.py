@@ -86,6 +86,8 @@ def restart_process(name):
             kill_processes_on_ports([80])
         case "DNS_SERVER":
             kill_processes_on_ports([53])
+        case "DB_MULTIPLEXER":
+            kill_processes_on_ports([6957])
     
     env = os.environ.copy()
     env['CONTROL_PLANE_IP'] = os.getenv('CONTROL_PLANE_IP', '127.0.0.1')

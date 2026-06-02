@@ -148,7 +148,7 @@ async def proxy_request(request: Request, request_id:str, lambda_name:str):
         available_lambda_ip = next(iter(available_lambdas.get(lambda_name,{})),None)
         if not available_lambda_ip:
             await scaler_client.poke_scaler()
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.5)
         else:
             available_lambda_tuple = available_lambdas[lambda_name].pop(available_lambda_ip,None)
             if not available_lambda_tuple:

@@ -32,7 +32,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                     self.individual_lambda_scale_limit = config.get("global_scale_limit", 5)
                     self.rr_stuck_time = config.get("rr_stuck_time", 5)
                     self.event_stuck_time = config.get("event_stuck_time", 15)
-                    self.retry_request_count = config.get("retry_request_count", 3)
+                    self.retry_event_count = config.get("retry_event_count", 3)
             except Exception:
                 pass
         
@@ -276,7 +276,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                             response_data = %s,
                             created_at = NOW()
                         WHERE request_id = %s
-                    """, (self.retry_request_count, status, response_data, request_id))
+                    """, (self.retry_event_count, status, response_data, request_id))
                 else:
                     await cur.execute("UPDATE requests SET status = %s, response_data = %s WHERE request_id = %s", (status, response_data, request_id))
                 log("ControlPlaneDB", "update_lambda_request", status="updated")

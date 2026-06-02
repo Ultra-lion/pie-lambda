@@ -7,6 +7,17 @@ import os
 import json
 from logger_utils import log
 
+config = {}
+
+try:
+    with open("config.json", "r") as f:
+        config = json.load(f)
+except Exception:
+    pass
+
+LAMBDA_TIMEOUT = config.get("lambda_timeout_mins", 5)
+
+
 class LambdaQueueHandler:
     def __init__(self):
         self.control_plane_db = ControlPlaneDB()
@@ -33,7 +44,7 @@ class LambdaQueueHandler:
                     headers=headers,
                     params=query_params,
                     json=payload,
-                    timeout=60,
+                    timeout=60*LAMBDA_TIMEOUT,
                 )
             
             await self.control_plane_db.update_lambda_request(request_id, {"status": "processed", "response_data": response.text})

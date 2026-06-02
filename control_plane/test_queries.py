@@ -54,16 +54,21 @@ async def main():
     await create_pool()
     print("pool created")
 
-    update_sql = "select count(*) from requests "
+    update_sql = "select status, count(*) from requests group by status"
     res = await execute_query(update_sql)
+    print("Result:", res)
 
+
+    # update_sql = "select * from requests where status='in_progress' order by created_at DESC limit 1;"
+    # res = await execute_query(update_sql)
+    # print("Result:", res)
 
     # update_sql = "update requests set status = 'pending' where request_id='5aa39e70-bfe2-4e5f-8bbc-d16abbbda440'"
     # res = await execute_query(update_sql)
 
     # sql_select = "update requests set status='pending' where request_id in (SELECT request_id from requests);"
     # res = await execute_query(sql_select)
-    print("Result:", res)
+    
     await pool.close()
 
 # Run the async loop

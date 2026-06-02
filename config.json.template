@@ -19,6 +19,7 @@
     "docker_sdk_check_interval_mins": 0.5,
     "// --- Request & Reliability Settings ---": "",
     "lambda_timeout_mins": 5,
+    "retry_event_count": 3, # no of retries for the Event type requests
     "rr_stuck_time": 5, # RequestResponse type lambda requests stuck time for cleanout applicability in mins
     "event_stuck_time": 15, # Event type lambda requests stuck time for cleanout applicability in mins
     "// --- Internal Self-Healing (Watchdog) ---": "",
