@@ -277,7 +277,7 @@ async def runtime_invocation_next(request: Request):
         request_id = lambda_payload.pop("request_id",None)
         await control_plane_db.mark_instance_as_busy(lambda_ip, request_id)
         if not request_id:
-            await control_plane_db.update_lambda_request(request_id, {"status": "error", "error_data": "Invalid request"})
+            await control_plane_db.update_lambda_request(request_id, {"status": "failed", "error_data": "Invalid request"})
             raise HTTPException(status_code=422, detail="unprocessable entity")
         headers = {
             "Lambda-Runtime-Aws-Request-Id": str(request_id),

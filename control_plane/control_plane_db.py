@@ -24,6 +24,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
         self.individual_lambda_scale_limit=5 
         self.rr_stuck_time=5
         self.event_stuck_time=15
+        self.retry_request_count=3
         if os.path.exists(config_path):
             try:
                 with open(config_path, 'r') as f:
@@ -31,6 +32,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                     self.individual_lambda_scale_limit = config.get("global_scale_limit", 5)
                     self.rr_stuck_time = config.get("rr_stuck_time", 5)
                     self.event_stuck_time = config.get("event_stuck_time", 15)
+                    self.retry_request_count = config.get("retry_request_count", 3)
             except Exception:
                 pass
         
@@ -97,6 +99,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                         request_id TEXT PRIMARY KEY,
                         lambda_name TEXT NOT NULL,
                         event_type TEXT NOT NULL,
+                        retries INTEGER DEFAULT 0,
                         priority INTEGER ,
                         request_data TEXT,
                         response_data TEXT,
@@ -258,12 +261,24 @@ class ControlPlaneDB(metaclass=SingletonMeta):
         log("ControlPlaneDB", "update_lambda_request", request_id=request_id)
         status = payload.get("status")
         response_data = payload.get("response_data")
+        increment_retry = payload.get("increment_retry", False)
+
         if isinstance(response_data, dict):
             response_data = json.dumps(response_data)
 
         async with self.db_connection() as db:
             async with db.cursor() as cur:
-                await cur.execute("UPDATE requests SET status = %s, response_data = %s WHERE request_id = %s", (status, response_data, request_id))
+                if increment_retry:
+                    await cur.execute("""
+                        UPDATE requests 
+                        SET status = CASE WHEN retries >= %s THEN 'failed' ELSE %s END,
+                            retries = retries + 1,
+                            response_data = %s,
+                            created_at = NOW()
+                        WHERE request_id = %s
+                    """, (self.retry_request_count, status, response_data, request_id))
+                else:
+                    await cur.execute("UPDATE requests SET status = %s, response_data = %s WHERE request_id = %s", (status, response_data, request_id))
                 log("ControlPlaneDB", "update_lambda_request", status="updated")
 
     async def delete_stuck_requests(self):
@@ -272,14 +287,27 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                 log("ControlPlaneDB", "delete_stuck_requests", rr_stuck_time=self.rr_stuck_time, event_stuck_time=self.event_stuck_time)
                 await cur.execute("""
                     UPDATE requests 
-                    SET status = 'failed'
-                    WHERE request_id IN (
-                        SELECT request_id FROM requests 
-                        WHERE 
-                        (status IN ('pending', 'in_progress') AND event_type='RequestResponse' AND created_at < NOW() - INTERVAL '{} minutes')
-                        OR (status IN ('pending', 'in_progress') AND event_type='Event' AND created_at < NOW() - INTERVAL '{} minutes')
-                    )
-                """.format(self.rr_stuck_time, self.event_stuck_time))
+                    SET 
+                        status = CASE 
+                            WHEN event_type = 'RequestResponse' OR retries >= %s THEN 'failed'
+                            ELSE 'pending'
+                        END,
+                        retries = CASE 
+                            WHEN event_type = 'Event' AND retries < %s THEN retries + 1
+                            ELSE retries
+                        END,
+                        created_at = CASE 
+                            WHEN event_type = 'Event' AND retries < %s THEN NOW()
+                            ELSE created_at
+                        END
+                    WHERE 
+                        status IN ('pending', 'in_progress', 'busy', 'processing')
+                        AND (
+                            (event_type = 'RequestResponse' AND created_at < NOW() - INTERVAL '{} minutes')
+                            OR 
+                            (event_type = 'Event' AND created_at < NOW() - INTERVAL '{} minutes')
+                        )
+                """.format(self.rr_stuck_time, self.event_stuck_time), [self.retry_request_count] * 3)
 
     async def get_all_containers(self):
         log("ControlPlaneDB", "get_all_containers")
@@ -358,7 +386,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
         log("ControlPlaneDB", "mark_requests_as_processing", count=len(requests))
         async with self.db_connection() as db:
             async with db.cursor() as cur:
-                await cur.execute("UPDATE requests SET status = 'processing' WHERE request_id = ANY(%s)", (requests,))
+                await cur.execute("UPDATE requests SET status = 'in_progress' WHERE request_id = ANY(%s)", (requests,))
                 log("ControlPlaneDB", "mark_requests_as_processing", status="updated")
     
     async def mark_requests_as_processed(self, requests):

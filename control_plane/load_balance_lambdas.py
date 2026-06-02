@@ -117,7 +117,7 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
                 )
             
             log("LoadBalancer", "proxy_api_call", request_id=request_id, status="response_received", response_status=response.status_code)
-            await control_plane_db.update_lambda_request(request_id, {"status": "success", "response_data": response.text})
+            await control_plane_db.update_lambda_request(request_id, {"status": "processed", "response_data": response.text})
             return response.content
         except Exception as e:
             await control_plane_db.update_lambda_request(request_id, {"status": "failed", "response_data": str(e)})
