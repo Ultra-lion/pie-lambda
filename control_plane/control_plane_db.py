@@ -259,7 +259,8 @@ class ControlPlaneDB(metaclass=SingletonMeta):
 
         async with self.db_connection() as db:
             async with db.cursor() as cur:
-                await cur.execute("INSERT INTO requests (request_id, lambda_name, event_type, priority, request_data, response_data, status) VALUES (%s, %s, %s, %s, %s, %s, %s)", (request_id, lambda_func_name, event_type, priority, request_data, response_data, status))
+                await cur.execute("INSERT INTO requests (request_id, lambda_name, event_type, priority, request_data, response_data, status) VALUES (%s, %s, %s, %s, %s, %s, %s)", 
+                                 (request_id, lambda_func_name, event_type, priority, request_data, response_data, status))
                 log("ControlPlaneDB", "create_lambda_request", status="created")
 
     async def update_lambda_request(self, request_id, payload):
@@ -288,6 +289,31 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                 else:
                     await cur.execute("UPDATE requests SET status = %s, response_data = %s WHERE request_id = %s", (status, response_data, request_id))
                 log("ControlPlaneDB", "update_lambda_request", status="updated")
+
+    async def claim_next_request(self, lambda_name):
+        """Atomically grabs the next pending request for a lambda."""
+        async with self.db_connection() as db:
+            async with db.transaction():
+                async with db.cursor() as cur:
+                    await cur.execute("""
+                        UPDATE requests 
+                        SET status = 'in_progress', last_used_at = NOW() 
+                        WHERE request_id = (
+                            SELECT request_id FROM requests 
+                            WHERE lambda_name = %s AND status = 'pending' 
+                            ORDER BY priority ASC, created_at ASC 
+                            LIMIT 1 
+                            FOR UPDATE SKIP LOCKED
+                        ) RETURNING request_id, request_data
+                    """, (lambda_name,))
+                    return await cur.fetchone()
+
+    async def get_request_status(self, request_id):
+        """Checks the status and response of a specific request."""
+        async with self.db_connection() as db:
+            async with db.cursor() as cur:
+                await cur.execute("SELECT status, response_data FROM requests WHERE request_id = %s", (request_id,))
+                return await cur.fetchone()
 
     async def delete_stuck_requests(self):
         async with self.db_connection() as db:

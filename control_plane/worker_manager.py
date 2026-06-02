@@ -24,22 +24,14 @@ LAMBDA_TIMEOUT = config.get("lambda_timeout_mins", 5)
 
 control_plane_db = None
 
-available_lambdas = {}
-
-lambdas_pending_registration = {}
-
-registered_lambdas = {}
-
-lambda_request_events={}
-lambda_request_payloads = {}
-lambda_request_responses = {}
+available_workers = {}  # { lambda_name: asyncio.Queue[ip] }
+worker_events = {}      # { ip: asyncio.Event }
+worker_payloads = {}    # { ip: payload }
+response_events = {}    # { request_id: asyncio.Event }
+registered_lambdas = {} # { ip: lambda_name }
 
 scaler_client = None
-
-
-
 background_tasks = set()
-
 
 class ScalerClient:
     def __init__(self):
@@ -77,17 +69,16 @@ class ScalerClient:
         finally:
             self.initializing = False
 
-    async def poke_scaler(self):
+    async def poke_scaler(self, message="scale pls"):
         if not self.available or not self.writer:
             asyncio.create_task(self.initialize())
             return
         
-        log("LoadBalancer", "ScalerClient.poke_scaler")
+        log("LoadBalancer", "ScalerClient.poke_scaler", message=message)
         try:
             async with self.lock:
-                self.writer.write("scale pls".encode())
+                self.writer.write(message.encode())
                 await self.writer.drain()
-                log("LoadBalancer", "ScalerClient.poke_scaler", status="poked")
         except Exception as e:
             log("LoadBalancer", "ScalerClient.poke_scaler", error=str(e))
             self.available=False
@@ -118,8 +109,10 @@ async def startup_event(app: FastAPI):
     global control_plane_db
     control_plane_db = ControlPlaneDB()
 
-    heartbeat_task = loop.create_task(start_heartbeat("WORKER_MANAGER"))
+    # Recover state from DB
+    await sync_available_workers_from_db()
 
+    heartbeat_task = loop.create_task(start_heartbeat("WORKER_MANAGER"))
     heartbeat_task.add_done_callback(background_tasks.discard)
 
     log("LoadBalancer", "startup_event", status="ready")
@@ -134,183 +127,133 @@ app = FastAPI(lifespan=startup_event)
 
 
 
-@app.post("/proxy_request/{lambda_name}/{request_id}")
-async def proxy_request(request: Request, request_id:str, lambda_name:str):
-    global scaler_client
-    available_lambda_ip = None
-    available_lambda_event=None
-    availability_start_time = datetime.datetime.now()
-    while not available_lambda_ip:
-        if datetime.datetime.now() - availability_start_time > datetime.timedelta(minutes=LAMBDA_TIMEOUT):
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail="The upstream server failed to respond in time."
-            )
-        available_lambda_ip = next(iter(available_lambdas.get(lambda_name,{})),None)
-        if not available_lambda_ip:
-            await scaler_client.poke_scaler()
-            await asyncio.sleep(0.5)
-        else:
-            available_lambda_tuple = available_lambdas[lambda_name].pop(available_lambda_ip,None)
-            if not available_lambda_tuple:
-                available_lambda_ip=None
-                continue
-            available_lambda_event, lambda_connection_request = available_lambda_tuple
-            if await lambda_connection_request.is_disconnected():
-                available_lambda_ip=None
-                continue
-            if not available_lambda_event:
-                available_lambda_ip=None
-                continue
-            else:
-                break
-    availibility_end_time = datetime.datetime.now()
-    availability_time_taken_seconds = (availibility_end_time - availability_start_time).total_seconds()
-    log("Worker Manager", "proxy_request", availability_time_taken_seconds=availability_time_taken_seconds)
-
-    lambda_request_events[request_id] = asyncio.Event()
-    try:
-        lambda_payload = await request.json()
-        if "request_id" not in lambda_payload:
-            lambda_payload['request_id'] =  request_id
-        
-        # Double check if the lambda is still connected before committing payload
-        if await lambda_connection_request.is_disconnected():
-            raise HTTPException(status_code=503, detail="Lambda disconnected before assignment")
-
-        lambda_request_payloads[available_lambda_ip] = (lambda_payload, datetime.datetime.now(timezone.utc))
-        available_lambda_event.set()
-        
-        # Ensure we never pass a negative or zero timeout
-        remaining_timeout = max(0.1, (LAMBDA_TIMEOUT * 60 - availability_time_taken_seconds))
-        await asyncio.wait_for(lambda_request_events[request_id].wait(), timeout=remaining_timeout)
-        return lambda_request_responses.pop(request_id,None)
-    except asyncio.TimeoutError:
-        lambda_request_payloads.pop(available_lambda_ip,None)
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="The upstream server failed to respond in time."
-        )
-    finally:
-        lambda_request_events.pop(request_id,None)
-
-
 @app.post("/register/container")
 async def register_container(request: Request):
-    log("LoadBalancer", "register_container")
     container_data = await request.json()
-    log("LoadBalancer", "register_container", container_data=container_data)
-
-    container_ip = container_data.get("ip_address")
+    ip = container_data.get("ip_address")
     lambda_name = container_data.get("lambda_name")
-
-    # Always update the registration to handle IP reuse scenarios
-    registered_lambdas[container_ip] = lambda_name
-
-    if container_ip in lambdas_pending_registration:
-        event = lambdas_pending_registration.pop(container_ip)
-        if event:
-            event.set()
-
+    
+    if lambda_name not in available_workers:
+        available_workers[lambda_name] = asyncio.Queue()
+    
+    registered_lambdas[ip] = lambda_name
+    await available_workers[lambda_name].put(ip)
+    log("WorkerManager", "register_container", ip=ip, lambda_name=lambda_name)
     return {"status": "accepted"}
 
+@app.post("/proxy_request/{lambda_name}/{request_id}")
+async def proxy_request(request: Request, request_id:str, lambda_name:str):
+    global control_plane_db, scaler_client
     
+    # 1. Wait for a worker
+    if lambda_name not in available_workers:
+        available_workers[lambda_name] = asyncio.Queue()
+    
+    try:
+        # Poke scaler to ensure we have workers starting
+        await scaler_client.poke_scaler()
+        
+        # Wait for an available worker IP (10s timeout before scaling check)
+        worker_ip = await asyncio.wait_for(available_workers[lambda_name].get(), timeout=30.0)
+        
+        # 2. Dispatch payload
+        payload = await request.json()
+        payload['request_id'] = request_id
+        
+        # Mark busy in DB before waking worker
+        await control_plane_db.mark_instance_as_busy(worker_ip, request_id)
+        
+        worker_payloads[worker_ip] = payload
+        worker_events[worker_ip].set()
+        
+        # 3. Wait for response
+        response_events[request_id] = asyncio.Event()
+        await asyncio.wait_for(response_events[request_id].wait(), timeout=LAMBDA_TIMEOUT * 60)
+        
+        res = await control_plane_db.get_request_status(request_id)
+        return json.loads(res['response_data']) if res['response_data'] else {}
+        
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Lambda timeout or no workers available")
+    finally:
+        response_events.pop(request_id, None)
 
-
-
-# 2. Handle RIE Runtime APIs (Lambda-side)
 @app.get("/{sdk_date}/runtime/invocation/next")
 async def runtime_invocation_next(request: Request):
-    global control_plane_db
+    global control_plane_db, scaler_client
     lambda_ip = request.client.host
-    log("LoadBalancer", "runtime_invocation_next", status="polling_for_work")
     
-    while True: # Outer loop to handle "Phantom Wakeups"
-        if lambda_ip not in registered_lambdas:
-            event = asyncio.Event()
-            lambdas_pending_registration[lambda_ip] = event
-            try:
-                while lambda_ip not in registered_lambdas:
-                    if await request.is_disconnected():
-                        return None
-                    try:
-                        await asyncio.wait_for(event.wait(), timeout=0.5)
-                        break
-                    except asyncio.TimeoutError:
-                        container = await control_plane_db.get_lambda_container_by_ip(lambda_ip)
-                        if container:
-                            registered_lambdas[lambda_ip] = container['lambda_name']
-                            break
-            finally:
-                lambdas_pending_registration.pop(lambda_ip, None)
+    # CRITICAL CHECK 1: Check for disconnection *before* even registering or waiting
+    if await request.is_disconnected():
+        log("WorkerManager", "runtime_invocation_next", status="disconnected_early", ip=lambda_ip)
+        return None
 
-        await control_plane_db.mark_instance_as_available(lambda_ip)
-        lambda_name = registered_lambdas[lambda_ip]
+    # Ensure state is clean
+    worker_events[lambda_ip] = asyncio.Event()
+    
+    # Notify Scaler we are ready to be registered
+    await scaler_client.poke_scaler(f"REGISTER {lambda_ip}")
+    
+    payload = None
+    request_id = None
+    try:
+        # Wait for proxy_request to assign a task. Use a long timeout matching LAMBDA_TIMEOUT.
+        await asyncio.wait_for(worker_events[lambda_ip].wait(), timeout=LAMBDA_TIMEOUT * 60)
         
-        if lambda_name not in available_lambdas:
-            available_lambdas[lambda_name] = {}
+        # CRITICAL CHECK 2: After being woken up, verify connection is still alive
+        if await request.is_disconnected():
+            log("WorkerManager", "runtime_invocation_next", status="disconnected_after_wakeup", ip=lambda_ip)
+            # If disconnected here, a payload was assigned by proxy_request.
+            # We need to retrieve it and mark the corresponding request as pending again.
+            payload = worker_payloads.pop(lambda_ip, None)
+            if payload:
+                request_id = payload.get('request_id')
+                if request_id:
+                    # Revert request status in DB so it can be picked up by another worker
+                    await control_plane_db.update_lambda_request(request_id, {"status": "pending"})
+                    log("WorkerManager", "runtime_invocation_next", status="reverted_request_status", request_id=request_id)
+            return None 
+
+        payload = worker_payloads.pop(lambda_ip) # Retrieve the assigned payload
+        request_id = payload.get('request_id')
         
-        event = asyncio.Event()
-        available_lambdas[lambda_name][lambda_ip] = (event, request)
-        
-        try:
-            while True:
-                if await request.is_disconnected():
-                    log("WorkerManager", "polling", status="disconnected", ip=lambda_ip)
-                    registered_lambdas.pop(lambda_ip, None)
-                    return None
-
-                try:
-                    await asyncio.wait_for(event.wait(), timeout=0.5)
-                    break
-                except asyncio.TimeoutError:
-                    continue
-        finally:
-            if lambda_name in available_lambdas:
-                available_lambdas[lambda_name].pop(lambda_ip, None)
-            if await request.is_disconnected():
-                lambda_request_payloads.pop(lambda_ip, None)
-
-        lambda_payload_tuple = lambda_request_payloads.pop(lambda_ip, None)
-        if not lambda_payload_tuple:
-            # Phantom Wakeup: loop back and resume polling instead of returning 502
-            continue
-
-        lambda_payload, lambda_request_start_time = lambda_payload_tuple
-        request_id = lambda_payload.pop("request_id", None)
-        res = await control_plane_db.mark_instance_as_busy(lambda_ip, request_id)
-        if not res:
-            lambda_request_event = lambda_request_events.pop(request_id,None)
-            lambda_request_responses[request_id] = {"message":"this is a duplicate request"}
-            lambda_request_event.set()
-            continue
         headers = {
             "Lambda-Runtime-Aws-Request-Id": str(request_id),
             "Lambda-Runtime-Deadline-Ms": str(LAMBDA_TIMEOUT * 60 * 1000),
         }
-        
-        return JSONResponse(content=lambda_payload, headers=headers)
+        return JSONResponse(content=payload, headers=headers)
+    except asyncio.TimeoutError:
+        # This means the worker waited for the full LAMBDA_TIMEOUT * 60 seconds
+        # and no task was assigned. It's effectively idle.
+        log("WorkerManager", "runtime_invocation_next", status="timeout_waiting_for_task", ip=lambda_ip)
+        return None 
+    finally:
+        # Ensure the event and any assigned payload are cleaned up regardless of outcome
+        worker_events.pop(lambda_ip, None)
+        worker_payloads.pop(lambda_ip, None) # In case payload was assigned but not sent
 
 @app.post("/{sdk_date}/runtime/invocation/{request_id}/response")
 async def runtime_invocation_response(request_id: str, request: Request):
-    log("worker_manager", "runtime_invocation_response", request_id=request_id)
-    # Handle lambda results here
-    lambda_request_event = lambda_request_events.pop(request_id,None)
-    await control_plane_db.mark_instance_as_available(request.client.host)
-    if lambda_request_event:
-        lambda_request_responses[request_id] = await request.json()
-        lambda_request_event.set()
+    lambda_ip = request.client.host
+    resp_body = await request.json()
+    
+    await control_plane_db.update_lambda_request(request_id, {"status": "processed", "response_data": json.dumps(resp_body)})
+    await control_plane_db.mark_instance_as_available(lambda_ip)
+    
+    # Wake up proxy_request
+    if request_id in response_events:
+        response_events[request_id].set()
+    
+    # Tell scaler to verify and re-register us
+    await scaler_client.poke_scaler(f"REGISTER {lambda_ip}")
     return {"status": "accepted"}
 
 @app.post("/{sdk_date}/runtime/invocation/{request_id}/error")
 async def runtime_invocation_error(request_id: str, request: Request):
     log("worker_manager", "runtime_invocation_error", request_id=request_id)
     # Handle lambda errors here
-    lambda_request_event = lambda_request_events.pop(request_id,None)
+    await control_plane_db.update_lambda_request(request_id, {"status": "failed", "response_data": json.dumps(await request.json())})
     await control_plane_db.mark_instance_as_available(request.client.host)
-    if lambda_request_event:
-        lambda_request_responses[request_id] = await request.json()
-        lambda_request_event.set()
     
     return {"status": "accepted"}
 

@@ -99,18 +99,6 @@ class LambdaScaler:
                 self.loop)
         future.result()
 
-        async def register_lambda():
-            async with httpx.AsyncClient() as client:
-                await client.post(
-                    "http://127.0.0.1:80/register/container",
-                    json={
-                        "ip_address":container_ip,
-                        "lambda_name":lambda_func_name
-                    },
-                    timeout=60
-                )
-        asyncio.run_coroutine_threadsafe(register_lambda(), self.loop)
-
 
 
     def scale_down_lambda(self, lambda_func_name, container_id):
@@ -227,13 +215,24 @@ class LambdaScaler:
                     data = await reader.read(1024)
                     if not data:
                         break
-                    log("Scaler", "ipc_server.handle_poke", status="received_data")
-                    try:
-                        log("Scaler", "ipc_server.handle_poke")
+                    msg = data.decode().strip()
+                    log("Scaler", "ipc_server.handle_poke", msg=msg)
+                    
+                    if msg.startswith("REGISTER"):
+                        ip = msg.split(" ")[1]
+                        # Verify in DB that it is actually available
+                        container = await self.control_plane_db.get_lambda_container_by_ip(ip)
+                        if container:
+                            # Call WorkerManager back to add to in-memory queue
+                            async with httpx.AsyncClient() as client:
+                                await client.post(
+                                    "http://127.0.0.1:80/register/container",
+                                    json={"ip_address": ip, "lambda_name": container['lambda_name']},
+                                    timeout=5
+                                )
+                    else:
                         self.IPC_event.set()
-                    except Exception as e:
-                        log("Scaler", "ipc_server.handle_poke", error=str(e))
-                        print(f"Error parsing request: {data}")
+
                     writer.write(b"OK")
                     await writer.drain()
                     
