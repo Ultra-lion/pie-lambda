@@ -89,6 +89,17 @@ class LambdaScaler:
                 log("Scaler", "scale_up_lambda", container_ip=container_ip)
             time.sleep(0.1)
 
+        # Push registration to WorkerManager immediately to warm the cache
+        try:
+            with httpx.Client() as client:
+                client.post(
+                    f"http://{control_plane_ip}:80/register/container",
+                    json={"ip_address": container_ip, "lambda_name": lambda_func_name},
+                    timeout=1.0
+                )
+        except Exception as e:
+            log("Scaler", "scale_up_lambda", status="registration_push_failed", error=str(e))
+
         future = asyncio.run_coroutine_threadsafe(
             self.control_plane_db.add_lambda_deployed_instances(
                 lambda_func_name,
@@ -216,22 +227,8 @@ class LambdaScaler:
                     if not data:
                         break
                     msg = data.decode().strip()
-                    log("Scaler", "ipc_server.handle_poke", msg=msg)
-                    
-                    if msg.startswith("REGISTER"):
-                        ip = msg.split(" ")[1]
-                        # Verify in DB that it is actually available
-                        container = await self.control_plane_db.get_lambda_container_by_ip(ip)
-                        if container:
-                            # Call WorkerManager back to add to in-memory queue
-                            async with httpx.AsyncClient() as client:
-                                await client.post(
-                                    "http://127.0.0.1:80/register/container",
-                                    json={"ip_address": ip, "lambda_name": container['lambda_name']},
-                                    timeout=5
-                                )
-                    else:
-                        self.IPC_event.set()
+                    log("Scaler", "ipc_server.handle_poke", msg=msg)                    
+                    self.IPC_event.set()
 
                     writer.write(b"OK")
                     await writer.drain()
