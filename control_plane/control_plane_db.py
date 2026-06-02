@@ -275,7 +275,8 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                         SET status = CASE WHEN retries >= %s THEN 'failed' ELSE %s END,
                             retries = retries + 1,
                             response_data = %s,
-                            created_at = NOW()
+                            created_at = NOW(),
+                            checked_out_at = NULL
                         WHERE request_id = %s
                     """, (self.retry_event_count, status, response_data, request_id))
                 else:
@@ -378,18 +379,36 @@ class ControlPlaneDB(metaclass=SingletonMeta):
         log("ControlPlaneDB", "get_enqueued_events")
         async with self.db_connection() as db:
             async with db.cursor() as cur:
+                # Correcting the argument mismatch: The interval is handled by .format(),
+                # so we only pass the scale limit for the %s placeholder.
+                # Also removing 'busy' from request status count as it's a container status.
+                stuck_interval = max(self.rr_stuck_time//2, 1)
                 await cur.execute("""
                     UPDATE requests
                     SET checked_out_at = NOW()
                     WHERE request_id IN (
-                        SELECT request_id FROM requests 
-                        WHERE status = 'pending' AND event_type = 'Event' 
-                        ORDER BY created_at 
-                        LIMIT (select %s - (select count(*) from requests where status = 'in_progress'))
+                        WITH active_counts AS (
+                            SELECT lambda_name, count(*) as active_count
+                            FROM requests
+                            WHERE status = 'in_progress' 
+                               OR (status = 'pending' AND checked_out_at > NOW() - INTERVAL '1 minute')
+                            GROUP BY lambda_name
+                        ),
+                        eligible_requests AS (
+                            SELECT r.request_id, r.lambda_name,
+                                   ROW_NUMBER() OVER (PARTITION BY r.lambda_name ORDER BY r.created_at) as rn,
+                                   COALESCE(ac.active_count, 0) as current_active
+                            FROM requests r
+                            LEFT JOIN active_counts ac ON r.lambda_name = ac.lambda_name
+                            WHERE r.status = 'pending' 
+                              AND r.event_type = 'Event' 
+                              AND (r.checked_out_at IS NULL OR r.checked_out_at < NOW() - INTERVAL '{} minutes')
+                        )
+                        SELECT request_id FROM eligible_requests
+                        WHERE rn <= (%s - current_active)
                     )
-                    and checked_out_at < NOW() - INTERVAL '{} minutes'
                     RETURNING *
-                """, (self.individual_lambda_scale_limit, max(self.rr_stuck_time//2, 1)))
+                """.format(stuck_interval), (self.individual_lambda_scale_limit,))
                 res = await cur.fetchall()
                 log("ControlPlaneDB", "get_enqueued_events", result_count=len(res))
                 return res

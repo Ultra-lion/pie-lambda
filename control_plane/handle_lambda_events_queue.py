@@ -21,6 +21,7 @@ LAMBDA_TIMEOUT = config.get("lambda_timeout_mins", 5)
 class LambdaQueueHandler:
     def __init__(self):
         self.control_plane_db = ControlPlaneDB()
+        self.active_tasks = set()
 
     async def proxy_api_calls(self, lamdba_name, payload, request_id):
         log("EventHandler", "proxy_api_calls", lambda_name=lamdba_name, request_id=request_id)
@@ -59,11 +60,12 @@ class LambdaQueueHandler:
                     
                     
                     for event in enqueued_events:
-                        asyncio.create_task(self.proxy_api_calls(event['lambda_name'], event['request_data'], event['request_id']))
+                        task = asyncio.create_task(self.proxy_api_calls(event['lambda_name'], event['request_data'], event['request_id']))
+                        self.active_tasks.add(task)
+                        task.add_done_callback(self.active_tasks.discard)
                 
                     
                     log("EventHandler", "handle_enqueued_events", status="batch_processed")
-                await asyncio.sleep(1)
             except Exception as e:
                 log("EventHandler", "handle_enqueued_events", error=str(e))
                 print(f"Error in handle_enqueued_events: {e}")
