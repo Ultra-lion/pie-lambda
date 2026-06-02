@@ -191,7 +191,11 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                         log("ControlPlaneDB", "mark_instance_as_busy", ip_address=ip_address, status="failed_rowcount_0")
                         return False
                     if request_id:
-                        await cur.execute("UPDATE requests SET status = 'in_progress', last_used_at = NOW() WHERE request_id = %s", (request_id,))
+                        await cur.execute("UPDATE requests SET status = 'in_progress', last_used_at = NOW() WHERE request_id = %s AND status = 'pending' RETURNING request_id", (request_id,))
+                        result = await cur.fetchone()
+                        if not result:
+                            log("ControlPlaneDB", "mark_instance_as_busy", ip_address=ip_address, status="failed_rowcount_0")
+                            return False
                     log("ControlPlaneDB", "mark_instance_as_busy", ip_address=ip_address, status="success")
                     return True
 
@@ -279,6 +283,8 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                             checked_out_at = NULL
                         WHERE request_id = %s
                     """, (self.retry_event_count, status, response_data, request_id))
+                elif status=="processed":
+                    await cur.execute("UPDATE requests SET status = %s, response_data = %s WHERE request_id = %s AND status = 'in_progress'", (status, response_data, request_id))
                 else:
                     await cur.execute("UPDATE requests SET status = %s, response_data = %s WHERE request_id = %s", (status, response_data, request_id))
                 log("ControlPlaneDB", "update_lambda_request", status="updated")

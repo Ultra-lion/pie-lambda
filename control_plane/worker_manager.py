@@ -193,7 +193,6 @@ async def proxy_request(request: Request, request_id:str, lambda_name:str):
         )
     finally:
         lambda_request_events.pop(request_id,None)
-        lambda_request_responses.pop(request_id,None)
 
 
 @app.post("/register/container")
@@ -279,8 +278,12 @@ async def runtime_invocation_next(request: Request):
 
         lambda_payload, lambda_request_start_time = lambda_payload_tuple
         request_id = lambda_payload.pop("request_id", None)
-        await control_plane_db.mark_instance_as_busy(lambda_ip, request_id)
-        
+        res = await control_plane_db.mark_instance_as_busy(lambda_ip, request_id)
+        if not res:
+            lambda_request_event = lambda_request_events.pop(request_id,None)
+            lambda_request_responses[request_id] = {"message":"this is a duplicate request"}
+            lambda_request_event.set()
+            continue
         headers = {
             "Lambda-Runtime-Aws-Request-Id": str(request_id),
             "Lambda-Runtime-Deadline-Ms": str(LAMBDA_TIMEOUT * 60 * 1000),
