@@ -37,7 +37,6 @@ class LambdaQueueHandler:
             headers={}
             query_params={}
             payload = json.loads(payload) if isinstance(payload, str) else payload
-            await self.control_plane_db.update_lambda_request(request_id, {"status": "in_progress"})
             async with httpx.AsyncClient() as client:
                 response = await client.request(
                     method="POST",

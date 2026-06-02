@@ -198,8 +198,10 @@ async def register_container(request: Request):
     container_ip = container_data.get("ip_address")
     lambda_name = container_data.get("lambda_name")
 
+    # Always update the registration to handle IP reuse scenarios
+    registered_lambdas[container_ip] = lambda_name
+
     if container_ip in lambdas_pending_registration:
-        registered_lambdas[container_ip] = lambda_name
         event = lambdas_pending_registration.pop(container_ip)
         if event:
             event.set()
@@ -292,7 +294,7 @@ async def runtime_invocation_next(request: Request):
             raise HTTPException(status_code=504, detail="Request timed out")
         return JSONResponse(content=lambda_payload, headers=headers)
     
-    return None
+    raise HTTPException(status_code=502, detail="Bad Gateway")
 
 @app.post("/{sdk_date}/runtime/invocation/{request_id}/response")
 async def runtime_invocation_response(request_id: str, request: Request):

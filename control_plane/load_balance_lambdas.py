@@ -107,7 +107,6 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
         try:
             payload_body = await request.json()
             payload_body['request_id'] = request_id
-            await control_plane_db.update_lambda_request(request_id, {"status": "in_progress"})
             async with httpx.AsyncClient() as client:
                 response = await client.request(
                     method="POST",
