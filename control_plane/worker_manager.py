@@ -246,8 +246,8 @@ async def runtime_invocation_next(request: Request):
         available_lambdas[lambda_name]={}
     available_lambdas[lambda_name][lambda_ip] = (asyncio.Event(), request)
     
-    event = available_lambdas.get(lambda_name,{}).get(lambda_ip,None)
-
+    tupl = available_lambdas.get(lambda_name,{}).get(lambda_ip,None)
+    event, req = tupl
     try:
         while True:
             # cleanup loop if a lambda disconnects
@@ -267,8 +267,10 @@ async def runtime_invocation_next(request: Request):
     except Exception as e:
         return None
     finally:
-        if lambda_name in available_lambdas and event == available_lambdas.get(lambda_name,{}).get(lambda_ip,None):
-            available_lambdas[lambda_name].pop(lambda_ip, None)
+        if lambda_name in available_lambdas:
+            tupl = available_lambdas.get(lambda_name,{}).get(lambda_ip,None)
+            if tupl and tupl[0] == event:
+                available_lambdas[lambda_name].pop(lambda_ip, None)
 
     lambda_payload = lambda_request_payloads.pop(lambda_ip,None)
     if lambda_payload:

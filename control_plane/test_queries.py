@@ -54,11 +54,15 @@ async def main():
     await create_pool()
     print("pool created")
 
-    update_sql = "update requests set status = 'pending' where request_id='5aa39e70-bfe2-4e5f-8bbc-d16abbbda440'"
+    update_sql = "select count(*) from requests "
     res = await execute_query(update_sql)
 
-    sql_select = "SELECT * from requests;"
-    res = await execute_query(sql_select)
+
+    # update_sql = "update requests set status = 'pending' where request_id='5aa39e70-bfe2-4e5f-8bbc-d16abbbda440'"
+    # res = await execute_query(update_sql)
+
+    # sql_select = "update requests set status='pending' where request_id in (SELECT request_id from requests);"
+    # res = await execute_query(sql_select)
     print("Result:", res)
     await pool.close()
 

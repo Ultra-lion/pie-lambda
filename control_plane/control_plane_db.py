@@ -349,7 +349,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
         log("ControlPlaneDB", "get_enqueued_events")
         async with self.db_connection() as db:
             async with db.cursor() as cur:
-                await cur.execute("SELECT * FROM requests WHERE status = 'pending' AND event_type = 'Event' LIMIT %s", (self.individual_lambda_scale_limit,))
+                await cur.execute("SELECT * FROM requests WHERE status = 'pending' AND event_type = 'Event' ORDER BY created_at LIMIT %s", (self.individual_lambda_scale_limit,))
                 res = await cur.fetchall()
                 log("ControlPlaneDB", "get_enqueued_events", result_count=len(res))
                 return res

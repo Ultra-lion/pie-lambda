@@ -3,7 +3,7 @@ import asyncio
 import docker
 import os
 import time 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import uuid
 import httpx
 import tarfile
@@ -156,7 +156,7 @@ class LambdaScaler:
         return self.docker_client.containers.list()
 
     def get_destroy_dead_pie_lambda_dockers(self):
-        unhealthy_statuses = ['exited', 'dead', 'created']
+        unhealthy_statuses = ['exited', 'dead']
         all_containers = self.docker_client.containers.list(all=True)
         reaped = []
 
@@ -167,9 +167,6 @@ class LambdaScaler:
             if any(BASE_SUBSTR.lower() in tag.lower() for tag in (container.image.tags or [])):
                 if container.status in unhealthy_statuses:
                     try:
-                        created_at = datetime.fromisoformat(container.attrs['Created'][:19])
-                        if container.status == 'created' and (datetime.utcnow() - created_at < timedelta(minutes=self.created_container_stuck_time_mins)):
-                            continue
                         container.remove(force=True)
                         reaped.append(container)
                     except Exception as e:

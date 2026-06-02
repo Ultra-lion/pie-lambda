@@ -61,6 +61,7 @@ class LambdaQueueHandler:
                 
                     
                     log("EventHandler", "handle_enqueued_events", status="batch_processed")
+                    await asyncio.sleep(1)
             except Exception as e:
                 log("EventHandler", "handle_enqueued_events", error=str(e))
                 print(f"Error in handle_enqueued_events: {e}")

@@ -6,6 +6,7 @@ import datetime
 
 import subprocess
 import signal
+import psutil
 
 
 from utils import get_local_ip, parse_timestamp
@@ -31,11 +32,61 @@ DB_MULTIPLEXER = {
     "DB_MULTIPLEXER": ["node", "pglite-socket-db.mjs"],
 }
 
+
+
+def kill_processes_on_ports(ports):
+    """
+    Finds and kills all processes listening or communicating on specified ports.
+    :param ports: A list or set of port integers (e.g., [8080, 3000])
+    """
+    # Ensure input is a set for faster O(1) lookups
+    target_ports = set(ports)
+    killed_count = 0
+
+    # Iterate through all running processes
+    for proc in psutil.process_iter(['pid', 'name']):
+        try:
+            # Retrieve internet connections (TCP/UDP) for the process
+            connections = proc.net_connections(kind='inet')
+            
+            for conn in connections:
+                # Check if the local port matches our target list
+                if conn.laddr and conn.laddr.port in target_ports:
+                    print(f"Found process '{proc.info['name']}' (PID: {proc.pid}) on port {conn.laddr.port}")
+                    
+                    # Terminate the process gently, then force if it won't die
+                    proc.terminate()
+                    
+                    # Wait up to 3 seconds for the process to exit
+                    gone, alive = psutil.wait_procs([proc], timeout=0.1)
+                    
+                    if alive:
+                        print(f"Process {proc.pid} refused to exit. Forcing kill...")
+                        proc.kill() # Sends SIGKILL / terminates forcefully
+                    
+                    killed_count += 1
+                    break # Move to the next process once this one is handled
+                    
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            # Skip system processes or processes that closed unexpectedly
+            continue
+
+    print(f"Cleanup complete. Total processes terminated: {killed_count}")
+
+
 def restart_process(name):
     cmd = COMPONENT_COMMANDS.get(name) or DB_MULTIPLEXER.get(name)
     if not cmd:
         print(f"Unknown component: {name}")
         return None
+    match name:
+        case "LOAD_BALANCER":
+            kill_processes_on_ports([443])
+        case "WORKER_MANAGER":
+            kill_processes_on_ports([80])
+        case "DNS_SERVER":
+            kill_processes_on_ports([53])
+    
     env = os.environ.copy()
     env['CONTROL_PLANE_IP'] = os.getenv('CONTROL_PLANE_IP', '127.0.0.1')
     # Excellence: Pass the config path down to components
