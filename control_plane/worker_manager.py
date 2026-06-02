@@ -240,7 +240,7 @@ async def runtime_invocation_next(request: Request):
             log("LoadBalancer", "runtime_invocation_next", error=str(e))
         finally:
             lambdas_pending_registration.pop(lambda_ip, None)
-
+    await control_plane_db.mark_instance_as_available(lambda_ip)
     lambda_name = registered_lambdas[lambda_ip]
     if lambda_name not in available_lambdas:
         available_lambdas[lambda_name]={}
@@ -277,13 +277,11 @@ async def runtime_invocation_next(request: Request):
         request_id = lambda_payload.pop("request_id",None)
         await control_plane_db.mark_instance_as_busy(lambda_ip, request_id)
         if not request_id:
-            await control_plane_db.update_lambda_request(request_id, {"status": "failed", "error_data": "Invalid request"})
             raise HTTPException(status_code=422, detail="unprocessable entity")
         headers = {
             "Lambda-Runtime-Aws-Request-Id": str(request_id),
             "Lambda-Runtime-Deadline-Ms": str(LAMBDA_TIMEOUT * 60 * 1000), # Example: 5 minutes from now
         }
-        await control_plane_db.update_lambda_request(request_id, {"status": "in_progress"})
         return JSONResponse(content=lambda_payload, headers=headers)
     
     return None

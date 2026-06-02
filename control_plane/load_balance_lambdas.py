@@ -107,13 +107,14 @@ async def proxy_api_call(request: Request|dict = None, lambda_func_name: str = N
         try:
             payload_body = await request.json()
             payload_body['request_id'] = request_id
+            await control_plane_db.update_lambda_request(request_id, {"status": "in_progress"})
             async with httpx.AsyncClient() as client:
                 response = await client.request(
                     method="POST",
                     url=f"http://127.0.0.1:80/proxy_request/{lambda_func_name}/{request_id}",
                     params=request.query_params,
                     json=payload_body,
-                    timeout=60*LAMBDA_TIMEOUT
+                    timeout=(60*LAMBDA_TIMEOUT+5),# plus 5 seconds to not overlap with worker_manager and cause race conditions
                 )
             
             log("LoadBalancer", "proxy_api_call", request_id=request_id, status="response_received", response_status=response.status_code)
