@@ -103,6 +103,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                         priority INTEGER ,
                         request_data TEXT,
                         response_data TEXT,
+                        checked_out_at TIMESTAMP,
                         status TEXT NOT NULL,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         last_used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -377,7 +378,18 @@ class ControlPlaneDB(metaclass=SingletonMeta):
         log("ControlPlaneDB", "get_enqueued_events")
         async with self.db_connection() as db:
             async with db.cursor() as cur:
-                await cur.execute("SELECT * FROM requests WHERE status = 'pending' AND event_type = 'Event' ORDER BY created_at LIMIT (select %s - (select count(*) from requests where status = 'in_progress'))", (self.individual_lambda_scale_limit,))
+                await cur.execute("""
+                    UPDATE requests
+                    SET checked_out_at = NOW()
+                    WHERE request_id IN (
+                        SELECT request_id FROM requests 
+                        WHERE status = 'pending' AND event_type = 'Event' 
+                        ORDER BY created_at 
+                        LIMIT (select %s - (select count(*) from requests where status = 'in_progress'))
+                    )
+                    and checked_out_at < NOW() - INTERVAL '{} minutes'
+                    RETURNING *
+                """, (self.individual_lambda_scale_limit, max(self.rr_stuck_time//2, 1)))
                 res = await cur.fetchall()
                 log("ControlPlaneDB", "get_enqueued_events", result_count=len(res))
                 return res
