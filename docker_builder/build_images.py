@@ -317,7 +317,7 @@ def teardownall(config:dict):
         print(f"Could Not remove Network {BASE_NETWORK_BRIDGE} Error: {e}")
     
 def teardowncontainers(config:dict):
-    all_images = client.images.list()
+    all_images = client.images.list(all=True)
     matching_images = []
     for image in all_images:
         for tag in image.tags:
@@ -331,8 +331,8 @@ def teardowncontainers(config:dict):
         for container in all_containers_list:
             if image.id == container.image.id:
                 matching_containers.append(container)
-                break
-    
+                
+    print("len of containers: ", len(matching_containers))
     for container in matching_containers:
         try:
             container.reload()
@@ -344,6 +344,7 @@ def teardowncontainers(config:dict):
 
         try:
             container.remove(force=True)
+            print(f"Removed container {container.name}")
         except Exception as e:
             print(f"Could Not remove container {container.name} Error: {e}")
     
