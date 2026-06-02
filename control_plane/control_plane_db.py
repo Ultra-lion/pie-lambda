@@ -403,6 +403,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                             WHERE r.status = 'pending' 
                               AND r.event_type = 'Event' 
                               AND (r.checked_out_at IS NULL OR r.checked_out_at < NOW() - INTERVAL '{} minutes')
+                            FOR UPDATE SKIP LOCKED
                         )
                         SELECT request_id FROM eligible_requests
                         WHERE rn <= (%s - current_active)
