@@ -66,14 +66,14 @@ class LambdaQueueHandler:
                 if enqueued_events:
                     log("EventHandler", "handle_enqueued_events", enqueued_count=len(enqueued_events))
                     requests = [event.get("request_id") for event in enqueued_events]
-                    await self.control_plane_db.mark_requests_as_processing(requests)
+                    
                     
                     for event in enqueued_events:
                         asyncio.create_task(self.proxy_api_calls(event['lambda_name'], event['request_data'], event['request_id']))
                 
                     
                     log("EventHandler", "handle_enqueued_events", status="batch_processed")
-                    await asyncio.sleep(1)
+                await asyncio.sleep(1)
             except Exception as e:
                 log("EventHandler", "handle_enqueued_events", error=str(e))
                 print(f"Error in handle_enqueued_events: {e}")

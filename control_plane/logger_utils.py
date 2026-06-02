@@ -31,6 +31,8 @@ funcs_to_print_data_for = [
     # "scaler_main_process",
     # "scale_up_lambda",
     # "proxy_request",
+    "handle_enqueued_events",
+    "scaler_thread_loop"
 ]
 
 print_all = os.getenv("enable_internal_logging", "false").lower() == "true"

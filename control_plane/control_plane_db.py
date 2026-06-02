@@ -190,7 +190,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                         log("ControlPlaneDB", "mark_instance_as_busy", ip_address=ip_address, status="failed_rowcount_0")
                         return False
                     if request_id:
-                        await cur.execute("UPDATE requests SET status = 'busy', last_used_at = NOW() WHERE request_id = %s", (request_id,))
+                        await cur.execute("UPDATE requests SET status = 'in_progress', last_used_at = NOW() WHERE request_id = %s", (request_id,))
                     log("ControlPlaneDB", "mark_instance_as_busy", ip_address=ip_address, status="success")
                     return True
 
@@ -377,7 +377,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
         log("ControlPlaneDB", "get_enqueued_events")
         async with self.db_connection() as db:
             async with db.cursor() as cur:
-                await cur.execute("SELECT * FROM requests WHERE status = 'pending' AND event_type = 'Event' ORDER BY created_at LIMIT %s", (self.individual_lambda_scale_limit,))
+                await cur.execute("SELECT * FROM requests WHERE status = 'pending' AND event_type = 'Event' ORDER BY created_at LIMIT (select %s - (select count(*) from requests where status = 'in_progress'))", (self.individual_lambda_scale_limit,))
                 res = await cur.fetchall()
                 log("ControlPlaneDB", "get_enqueued_events", result_count=len(res))
                 return res

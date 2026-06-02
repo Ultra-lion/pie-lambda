@@ -6,6 +6,7 @@ import asyncio
 import uvicorn
 import os
 import datetime
+from datetime import timezone
 import json
 
 from logger_utils import log
@@ -172,7 +173,7 @@ async def proxy_request(request: Request, request_id:str, lambda_name:str):
         lambda_payload = await request.json()
         if "request_id" not in lambda_payload:
             lambda_payload['request_id'] =  request_id
-        lambda_request_payloads[available_lambda_ip] = lambda_payload
+        lambda_request_payloads[available_lambda_ip] = (lambda_payload, datetime.datetime.now(timezone.utc))  
         available_lambda_event.set()
         
         await asyncio.wait_for(lambda_request_events[request_id].wait(),timeout=(LAMBDA_TIMEOUT*60 - availability_time_taken_seconds))
@@ -272,23 +273,30 @@ async def runtime_invocation_next(request: Request):
             if tupl and tupl[0] == event:
                 available_lambdas[lambda_name].pop(lambda_ip, None)
 
-    lambda_payload = lambda_request_payloads.pop(lambda_ip,None)
-    if lambda_payload:
+    lambda_payload_tuple = lambda_request_payloads.pop(lambda_ip,None)
+    if lambda_payload_tuple:
+        lambda_payload, lambda_request_start_time = lambda_payload_tuple
         request_id = lambda_payload.pop("request_id",None)
         await control_plane_db.mark_instance_as_busy(lambda_ip, request_id)
         if not request_id:
+            await control_plane_db.update_lambda_request(request_id, {"status": "failed", "error_data": "Invalid request"})
             raise HTTPException(status_code=422, detail="unprocessable entity")
         headers = {
             "Lambda-Runtime-Aws-Request-Id": str(request_id),
             "Lambda-Runtime-Deadline-Ms": str(LAMBDA_TIMEOUT * 60 * 1000), # Example: 5 minutes from now
         }
+        if datetime.datetime.now(timezone.utc) - lambda_request_start_time < datetime.timedelta(seconds=(LAMBDA_TIMEOUT*60 - 1)):
+            await control_plane_db.update_lambda_request(request_id, {"status": "in_progress"})
+        else:
+            await control_plane_db.update_lambda_request(request_id, {"status": "failed", "error_data": "Request timed out"})
+            raise HTTPException(status_code=504, detail="Request timed out")
         return JSONResponse(content=lambda_payload, headers=headers)
     
     return None
 
 @app.post("/{sdk_date}/runtime/invocation/{request_id}/response")
 async def runtime_invocation_response(request_id: str, request: Request):
-    log("LoadBalancer", "runtime_invocation_response", request_id=request_id)
+    log("worker_manager", "runtime_invocation_response", request_id=request_id)
     # Handle lambda results here
     lambda_request_event = lambda_request_events.pop(request_id,None)
     await control_plane_db.mark_instance_as_available(request.client.host)
@@ -299,7 +307,7 @@ async def runtime_invocation_response(request_id: str, request: Request):
 
 @app.post("/{sdk_date}/runtime/invocation/{request_id}/error")
 async def runtime_invocation_error(request_id: str, request: Request):
-    log("LoadBalancer", "runtime_invocation_error", request_id=request_id)
+    log("worker_manager", "runtime_invocation_error", request_id=request_id)
     # Handle lambda errors here
     lambda_request_event = lambda_request_events.pop(request_id,None)
     await control_plane_db.mark_instance_as_available(request.client.host)
