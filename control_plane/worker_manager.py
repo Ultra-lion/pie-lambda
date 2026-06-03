@@ -360,8 +360,6 @@ async def runtime_invocation_next(request: Request):
             "Lambda-Runtime-Aws-Request-Id": str(request_id),
             "Lambda-Runtime-Deadline-Ms": str(LAMBDA_TIMEOUT * 60 * 1000),
         }
-        registered_lambdas.pop(lambda_ip,None)
-        workers_in_queue.discard(lambda_ip)
         return JSONResponse(content=payload, headers=headers)
     except asyncio.TimeoutError:
         # This means the worker waited for the full LAMBDA_TIMEOUT * 60 seconds
@@ -374,6 +372,8 @@ async def runtime_invocation_next(request: Request):
         if lambda_ip not in workers_in_queue:
             worker_events.pop(lambda_ip, None)
         worker_payloads.pop(lambda_ip, None) # In case payload was assigned but not sent
+        registered_lambdas.pop(lambda_ip,None)
+        workers_in_queue.discard(lambda_ip)
 
 @app.post("/{sdk_date}/runtime/invocation/{request_id}/response")
 async def runtime_invocation_response(request_id: str, request: Request):
