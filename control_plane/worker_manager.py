@@ -102,6 +102,7 @@ async def memory_garbage_collector():
                 registered_lambdas.pop(ip, None)
                 worker_events.pop(ip, None)
                 worker_payloads.pop(ip, None)
+                workers_in_queue.discard(ip)
         except Exception as e:
             log("WorkerManager", "memory_gc", status="error", error=str(e))
 
@@ -367,13 +368,15 @@ async def runtime_invocation_next(request: Request):
         log("WorkerManager", "runtime_invocation_next", status="timeout_waiting_for_task", ip=lambda_ip)
         return None 
     finally:
-        # IMPORTANT: Only pop the event if the worker is NOT in the queue.
-        # If it timed out, it might still be in workers_in_queue/available_workers.
-        if lambda_ip not in workers_in_queue:
+        # Only clean up state if the worker disconnected or if a task was assigned 
+        # (proxy_request discards it from workers_in_queue when a task is popped).
+        # On a timeout, we keep it in the set so the next poll skips registration,
+        # preserving its position in the FIFO queue and avoiding duplicates.
+        if lambda_ip not in workers_in_queue or await request.is_disconnected():
             worker_events.pop(lambda_ip, None)
-        worker_payloads.pop(lambda_ip, None) # In case payload was assigned but not sent
-        registered_lambdas.pop(lambda_ip,None)
-        workers_in_queue.discard(lambda_ip)
+            worker_payloads.pop(lambda_ip, None)
+            workers_in_queue.discard(lambda_ip)
+            # Note: We do NOT pop registered_lambdas here as it is a cache managed by memory_gc.
 
 @app.post("/{sdk_date}/runtime/invocation/{request_id}/response")
 async def runtime_invocation_response(request_id: str, request: Request):

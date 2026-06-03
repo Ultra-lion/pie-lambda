@@ -289,25 +289,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                 else:
                     await cur.execute("UPDATE requests SET status = %s, response_data = %s WHERE request_id = %s", (status, response_data, request_id))
                 log("ControlPlaneDB", "update_lambda_request", status="updated")
-
-    async def claim_next_request(self, lambda_name):
-        """Atomically grabs the next pending request for a lambda."""
-        async with self.db_connection() as db:
-            async with db.transaction():
-                async with db.cursor() as cur:
-                    await cur.execute("""
-                        UPDATE requests 
-                        SET status = 'in_progress', last_used_at = NOW() 
-                        WHERE request_id = (
-                            SELECT request_id FROM requests 
-                            WHERE lambda_name = %s AND status = 'pending' 
-                            ORDER BY priority ASC, created_at ASC 
-                            LIMIT 1 
-                            FOR UPDATE SKIP LOCKED
-                        ) RETURNING request_id, request_data
-                    """, (lambda_name,))
-                    return await cur.fetchone()
-
+                
     async def get_request_status(self, request_id):
         """Checks the status and response of a specific request."""
         async with self.db_connection() as db:
