@@ -87,6 +87,23 @@ class ScalerClient:
             self.writer = None
             asyncio.create_task(self.initialize())
         
+async def memory_garbage_collector():
+    """Periodically reconciles memory state with DB to prevent 'Ghost Worker' drift."""
+    while True:
+        await asyncio.sleep(60) # Run every minute
+        try:
+            containers = await control_plane_db.get_all_containers()
+            live_ips = {c['ip_address'] for c in containers if c['ip_address']}
+            
+            # Remove registered lambdas that are no longer in the DB
+            stale_ips = set(registered_lambdas.keys()) - live_ips
+            for ip in stale_ips:
+                log("WorkerManager", "memory_gc", status="cleaning_stale_ip", ip=ip)
+                registered_lambdas.pop(ip, None)
+                worker_events.pop(ip, None)
+                worker_payloads.pop(ip, None)
+        except Exception as e:
+            log("WorkerManager", "memory_gc", status="error", error=str(e))
 
 
 async def start_heartbeat(component_name):
@@ -113,6 +130,9 @@ async def startup_event(app: FastAPI):
 
     # Recover state from DB
     await sync_available_workers_from_db()
+
+    # Start memory GC
+    loop.create_task(memory_garbage_collector())
 
     heartbeat_task = loop.create_task(start_heartbeat("WORKER_MANAGER"))
     heartbeat_task.add_done_callback(background_tasks.discard)
@@ -159,7 +179,7 @@ async def _try_register_worker(ip: str, request: Request = None, force_db: bool 
     if ip in workers_in_queue:
         return
 
-    lambda_name = None
+    lambda_name = registered_lambdas.get(ip)
     # Total time to attempt registration before giving up for this call
     MAX_REGISTRATION_ATTEMPTS_TIME = 30.0 # seconds
     RETRY_INTERVAL = 0.5 # seconds
@@ -178,22 +198,22 @@ async def _try_register_worker(ip: str, request: Request = None, force_db: bool 
             if request and await request.is_disconnected():
                 log("WorkerManager", "internal_register", status="aborted_worker_disconnected", ip=ip)
                 return
+            
+            lambda_name = registered_lambdas.get(ip)
 
             # 1. Fast Path: Try memory cache
-            lambda_name = registered_lambdas.get(ip)
             if lambda_name:
-                log("WorkerManager", "internal_register", status="found_in_cache", ip=ip, lambda_name=lambda_name)
                 break # Found in cache, exit loop
 
             # 2. Fallback to DB (if cache miss or forced)
             container = await control_plane_db.get_lambda_container_by_ip(ip)
             if container:
                 lambda_name = container['lambda_name']
-                registered_lambdas[ip] = lambda_name # Update cache
+                registered_lambdas[ip] = lambda_name
                 log("WorkerManager", "internal_register", status="found_in_db", ip=ip, lambda_name=lambda_name)
                 break # Found in DB, exit loop
 
-            # 3. If still unknown, wait for Scaler signal (reactive)
+            # 3. Wait for Scaler signal (reactive)
             log("WorkerManager", "internal_register", status="waiting_for_scaler_signal", ip=ip, elapsed=(datetime.datetime.now(timezone.utc) - start_time).total_seconds())
             try:
                 # Wait for the event, but respect the overall registration timeout
@@ -217,19 +237,20 @@ async def _try_register_worker(ip: str, request: Request = None, force_db: bool 
             log("WorkerManager", "internal_register", status="registration_aborted_after_retries", ip=ip)
             return
 
-    if lambda_name:
-        if lambda_name not in available_workers:
-            available_workers[lambda_name] = asyncio.Queue()
-        
-        if ip not in worker_events:
-            worker_events[ip] = asyncio.Event()
-        else:
-            worker_events[ip].clear()
+        if lambda_name:
+            if lambda_name not in available_workers:
+                available_workers[lambda_name] = asyncio.Queue()
+            
+            if ip not in worker_events:
+                worker_events[ip] = asyncio.Event()
+            else:
+                worker_events[ip].clear()
 
-        registered_lambdas[ip] = lambda_name
-        workers_in_queue.add(ip)
-        await available_workers[lambda_name].put((ip, worker_events[ip], request))
-        log("WorkerManager", "internal_register", ip=ip, lambda_name=lambda_name, status="successfully_registered")
+            registered_lambdas[ip] = lambda_name
+            workers_in_queue.add(ip)
+            await available_workers[lambda_name].put((ip, worker_events[ip], request))
+            await control_plane_db.mark_instance_as_available(ip) # Ensure DB reflects the ready state
+            log("WorkerManager", "internal_register", ip=ip, lambda_name=lambda_name, status="successfully_registered")
             
     finally:
         if created_pending_event and ip in lambdas_pending_registration:
@@ -257,19 +278,22 @@ async def proxy_request(request: Request, request_id:str, lambda_name:str):
             
             # Pop worker metadata from queue
             worker_ip, event, worker_request = await asyncio.wait_for(available_workers[lambda_name].get(), timeout=timeout_val)
-            workers_in_queue.discard(worker_ip)
             
             # LIVENESS CHECK: If the worker disconnected while in queue, skip it
             if worker_request and await worker_request.is_disconnected():
                 log("WorkerManager", "proxy_request", status="worker_ghost_detected", ip=worker_ip)
+                workers_in_queue.discard(worker_ip)
                 worker_events.pop(worker_ip, None)
                 continue
                 
             # SSoT CHECK: Ensure DB still sees this worker as available
             success = await control_plane_db.mark_instance_as_busy(worker_ip, request_id)
             if not success:
+                workers_in_queue.discard(worker_ip) # Cleanup if DB out of sync
                 continue
             
+            workers_in_queue.discard(worker_ip)
+
             # Verified worker found
             break
         
@@ -281,7 +305,7 @@ async def proxy_request(request: Request, request_id:str, lambda_name:str):
         # 3. Wait for response
         response_events[request_id] = asyncio.Event()
         await asyncio.wait_for(response_events[request_id].wait(), timeout=LAMBDA_TIMEOUT * 60)
-        
+         
         res = await control_plane_db.get_request_status(request_id)
         return json.loads(res['response_data']) if res['response_data'] else {}
         
@@ -336,6 +360,8 @@ async def runtime_invocation_next(request: Request):
             "Lambda-Runtime-Aws-Request-Id": str(request_id),
             "Lambda-Runtime-Deadline-Ms": str(LAMBDA_TIMEOUT * 60 * 1000),
         }
+        registered_lambdas.pop(lambda_ip,None)
+        workers_in_queue.discard(lambda_ip)
         return JSONResponse(content=payload, headers=headers)
     except asyncio.TimeoutError:
         # This means the worker waited for the full LAMBDA_TIMEOUT * 60 seconds
@@ -372,6 +398,10 @@ async def runtime_invocation_error(request_id: str, request: Request):
     # Handle lambda errors here
     await control_plane_db.update_lambda_request(request_id, {"status": "failed", "response_data": json.dumps(await request.json())})
     await control_plane_db.mark_instance_as_available(lambda_ip)
+
+    # Wake up proxy_request
+    if request_id in response_events:
+        response_events[request_id].set()
     
     # Re-register worker directly
     await _try_register_worker(lambda_ip)
