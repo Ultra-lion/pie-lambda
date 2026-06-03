@@ -289,7 +289,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                 else:
                     await cur.execute("UPDATE requests SET status = %s, response_data = %s WHERE request_id = %s", (status, response_data, request_id))
                 log("ControlPlaneDB", "update_lambda_request", status="updated")
-                
+
     async def get_request_status(self, request_id):
         """Checks the status and response of a specific request."""
         async with self.db_connection() as db:
@@ -417,7 +417,6 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                             WHERE r.status = 'pending' 
                               AND r.event_type = 'Event' 
                               AND (r.checked_out_at IS NULL OR r.checked_out_at < NOW() - INTERVAL '{} minutes')
-                            FOR UPDATE SKIP LOCKED
                         )
                         SELECT request_id FROM eligible_requests
                         WHERE rn <= (%s - current_active)
