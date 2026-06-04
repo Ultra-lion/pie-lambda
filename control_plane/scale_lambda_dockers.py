@@ -114,12 +114,30 @@ class LambdaScaler:
 
     def scale_down_lambda(self, lambda_func_name, container_id):
         log("Scaler", "scale_down_lambda", lambda_name=lambda_func_name, container_id=container_id)
+        container_ip=None
+        try:
+            container_ip = self.docker_client.containers.get(container_id).attrs['NetworkSettings']["Networks"][BASE_NETWORK_BRIDGE]["IPAddress"]
+        except Exception as e:
+            log("Scaler", "scale_down_lambda", container_ip=container_ip)
+        
         try:
             self.docker_client.containers.get(container_id).stop()
             log("Scaler", "scale_down_lambda", container_id=container_id, status="stopped")
         except Exception as e:
             log("Scaler", "scale_down_lambda", container_id=container_id, status="stop_failed", error=str(e))
             pass
+        control_plane_ip = get_local_ip()
+        if container_ip:
+            try:
+                with httpx.Client() as client:
+                    client.post(
+                        f"http://{control_plane_ip}:80/unregister/container",
+                        json={"ip_address": container_ip},
+                        timeout=1.0
+                    )
+            except Exception as e:
+                log("Scaler", "scale_down_lambda", status="unregistration_push_failed", error=str(e))
+
         try:
             self.docker_client.containers.get(container_id).remove(force=True)
             log("Scaler", "scale_down_lambda", container_id=container_id, status="removed")

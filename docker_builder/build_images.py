@@ -84,6 +84,15 @@ def build_docker_network():
     return network
 
     
+def check_if_network_exists():
+    exists = False
+    docker_networks = client.networks.list()
+    for network in docker_networks:
+        if network.name == BASE_NETWORK_BRIDGE:
+            exists=True
+            break
+    if not exists:
+        build_docker_network()
 
 def setup_docker_network_bridge():
     docker_networks = client.networks.list()
@@ -246,15 +255,6 @@ def teardown_lambda_functions(config:dict):
         except Exception as e:
             print(f"Could Not remove image {image.tags} Error: {e}")
     
-    try:
-
-        network = client.networks.get(BASE_NETWORK_BRIDGE)
-        network.remove()
-    except docker.errors.NotFound:
-        pass
-    except Exception as e:
-        print(f"Could Not remove Network {BASE_NETWORK_BRIDGE} Error: {e}")
-    
 
 def rebuildlambdas(config):
     teardown_lambda_functions(config)
@@ -266,6 +266,7 @@ def build(config:dict):
     build_lambda_functions(config)
     
 def deploy(config:dict):
+    check_if_network_exists()
     deploy_control_plane_docker(config)
 
 

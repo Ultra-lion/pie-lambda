@@ -13,15 +13,8 @@ if [ ! -f /var/task/__init__.py ]; then
 fi
 
 # Create a symlink so python can find the package by its real name
-if [ ! -L "/var/${LAMBDA_FUNC_NAME}" ] && [ -w "/var" ]; then
-  ln -s /var/task "/var/${LAMBDA_FUNC_NAME}" || echo "Warning: Could not create symlink"
-fi
-
-# Ensure /var is in PYTHONPATH without creating leading/trailing colons
-if [ -z "$PYTHONPATH" ]; then
-  export PYTHONPATH="/var"
-else
-  export PYTHONPATH="$PYTHONPATH:/var"
+if [ ! -e "${LAMBDA_TASK_ROOT}/${LAMBDA_FUNC_NAME}" ]; then
+  ln -s . "${LAMBDA_TASK_ROOT}/${LAMBDA_FUNC_NAME}" || echo "Warning: Could not create symlink"
 fi
 
 # 3. THE FIX: Resolve the handler
