@@ -242,10 +242,11 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                 OR 
                     (status = 'busy' AND COALESCE(last_used_at, created_at) < NOW() - INTERVAL '{} minutes')
                 OR 
-                    (status = 'provisioning' AND COALESCE(last_used_at, created_at) < NOW() - INTERVAL '{} minutes')
-                )
+                    (status in ('provisioning', 'deployed') AND COALESCE(last_used_at, created_at) < NOW() - INTERVAL '{} minutes')
                 OR 
                     (status = 'failed')
+                    
+                )
                 RETURNING *;
                 """.format(self.available_container_scale_down_time, self.busy_container_scale_down_time, self.provisioning_container_scale_down_time))
                 rows = await cur.fetchall()
