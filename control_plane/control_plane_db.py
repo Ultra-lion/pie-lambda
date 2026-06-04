@@ -154,7 +154,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
 
     async def add_lambda_deployed_instances(self, lambda_name, container_id, ip_address, provisioning_row_id=None):
         log("ControlPlaneDB", "add_lambda_deployed_instances", lambda_name=lambda_name, container_id=container_id, ip=ip_address)
-        status = "available"
+        status = "deployed"
         async with self.db_connection() as db:
             async with db.cursor() as cur:
                 if provisioning_row_id:
