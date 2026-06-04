@@ -179,13 +179,27 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                 res = await cur.fetchall()
                 log("ControlPlaneDB", "get_lambda_deployed_instances", result_count=len(res))
                 return res
+    
+    async def get_available_containers(self, lambda_name):
+        log("ControlPlaneDB", "get_available_containers", lambda_name=lambda_name)
+        async with self.db_connection() as db:
+            async with db.cursor() as cur:
+                await cur.execute("UPDATE containers SET status = 'busy' WHERE lambda_name = %s AND status = 'available' RETURNING ip_address", (lambda_name,))
+                res = await cur.fetchone()
+                log("ControlPlaneDB", "get_available_containers", found=bool(res))
+                return res
+
 
     async def mark_instance_as_busy(self, ip_address, request_id=None):
         log("ControlPlaneDB", "mark_instance_as_busy", ip_address=ip_address, request_id=request_id)
         async with self.db_connection() as db:
             async with db.transaction():
                 async with db.cursor() as cur:
-                    await cur.execute("UPDATE containers SET status = 'busy', last_used_at = NOW() WHERE ip_address = %s AND status = 'available' RETURNING container_id", (ip_address,))
+                    # Ensure we only pick up containers that aren't being reaped
+                    await cur.execute("""
+                        UPDATE containers SET status = 'busy', last_used_at = NOW() 
+                        WHERE ip_address = %s AND status = 'available' 
+                        RETURNING container_id""", (ip_address,))
                     result = await cur.fetchone()
                     if result is None:
                         log("ControlPlaneDB", "mark_instance_as_busy", ip_address=ip_address, status="failed_rowcount_0")
@@ -206,6 +220,14 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                 await cur.execute("UPDATE containers SET status = 'available', last_used_at = NOW() WHERE ip_address = %s", (ip_address,))
                 log("ControlPlaneDB", "mark_instance_as_available", status="updated")
 
+    async def mark_instance_as_failed(self, ip_address):
+        log("ControlPlaneDB", "mark_instance_as_failed", ip_address=ip_address)
+        async with self.db_connection() as db:
+            async with db.cursor() as cur:
+                await cur.execute("UPDATE containers SET status = 'failed', last_used_at = NOW() WHERE ip_address = %s", (ip_address,))
+                log("ControlPlaneDB", "mark_instance_as_failed", status="updated")
+
+
     async def get_containers_to_destroy(self):
         log("ControlPlaneDB", "get_containers_to_destroy", status="checking")
         async with self.db_connection() as db:
@@ -222,6 +244,8 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                 OR 
                     (status = 'provisioning' AND COALESCE(last_used_at, created_at) < NOW() - INTERVAL '{} minutes')
                 )
+                OR 
+                    (status = 'failed')
                 RETURNING *;
                 """.format(self.available_container_scale_down_time, self.busy_container_scale_down_time, self.provisioning_container_scale_down_time))
                 rows = await cur.fetchall()
