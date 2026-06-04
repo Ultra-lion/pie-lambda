@@ -180,6 +180,7 @@ async def proxy_request(request: Request, request_id:str, lambda_name:str):
             res = await control_plane_db.get_request_status(request_id)
             if res.get("status")=="pending" and res.get("response_data")=="worker_disconnected":
                 continue
+            await control_plane_db.mark_instance_as_available(worker_ip)
             return json.loads(res['response_data']) if res['response_data'] else {}
         
     except asyncio.TimeoutError:
@@ -201,6 +202,11 @@ async def runtime_invocation_next(request: Request):
     request_id = None
     try:
         listening_workers[lambda_ip] = (asyncio.Event(), request)
+        try:
+            await control_plane_db.mark_instance_as_available(lambda_ip)
+        except Exception as e:
+            pass
+        
         while True:
             try:
                 event, req = listening_workers[lambda_ip]
@@ -239,7 +245,7 @@ async def runtime_invocation_response(request_id: str, request: Request):
     resp_body = await request.json()
     
     await control_plane_db.update_lambda_request(request_id, {"status": "processed", "response_data": json.dumps(resp_body)})
-    await control_plane_db.mark_instance_as_available(lambda_ip)
+    # await control_plane_db.mark_instance_as_available(lambda_ip)
     
     # Wake up proxy_request
     if request_id in response_events:
@@ -271,7 +277,7 @@ async def runtime_invocation_error(request_id: str, request: Request):
     lambda_ip = request.client.host
     # Handle lambda errors here
     await control_plane_db.update_lambda_request(request_id, {"status": "failed", "response_data": json.dumps(await request.json())})
-    await control_plane_db.mark_instance_as_available(lambda_ip)
+    # await control_plane_db.mark_instance_as_available(lambda_ip)
 
     # Wake up proxy_request
     if request_id in response_events:
