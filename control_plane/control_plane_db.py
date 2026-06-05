@@ -184,7 +184,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
         log("ControlPlaneDB", "get_available_containers", lambda_name=lambda_name)
         async with self.db_connection() as db:
             async with db.cursor() as cur:
-                await cur.execute("UPDATE containers SET status = 'busy' WHERE lambda_name = %s AND status = 'available' RETURNING ip_address", (lambda_name,))
+                await cur.execute("UPDATE containers SET status = 'busy' WHERE ip_address = (select ip_address from containers where  lambda_name = %s AND status = 'available' order by created_at desc limit 1 ) RETURNING ip_address", (lambda_name,))
                 res = await cur.fetchone()
                 log("ControlPlaneDB", "get_available_containers", found=bool(res))
                 return res

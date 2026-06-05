@@ -59,6 +59,18 @@ async def main():
     print("Result:", res)
 
 
+    update_sql = "select status, count(*) from requests group by status"
+    res = await execute_query(update_sql)
+    print("Result:", res)
+
+    update_sql = "select * from requests where status='failed' order by created_at desc limit 1"
+    res = await execute_query(update_sql)
+    print("Result:", res)
+
+    
+
+
+
     # update_sql = "select * from requests where status='in_progress' order by created_at DESC limit 1;"
     # res = await execute_query(update_sql)
     # print("Result:", res)

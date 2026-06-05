@@ -145,7 +145,7 @@ async def proxy_request(request: Request, request_id:str, lambda_name:str):
             
             # Note: Fixed method name to plural and handling dict return
             worker_data = await control_plane_db.get_available_containers(lambda_name)
-            log("WorkerManager", "proxy_request", status="trying to get worker", lambda_name=lambda_name)
+            log("WorkerManager", "proxy_request", status="trying to get worker", lambda_name=lambda_name, request_id=request_id)
             if not worker_data:
                 await asyncio.sleep(1)
                 continue
