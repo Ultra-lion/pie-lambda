@@ -217,8 +217,10 @@ class ControlPlaneDB(metaclass=SingletonMeta):
         log("ControlPlaneDB", "mark_instance_as_available", ip_address=ip_address)
         async with self.db_connection() as db:
             async with db.cursor() as cur:
-                await cur.execute("UPDATE containers SET status = 'available', last_used_at = NOW() WHERE ip_address = %s", (ip_address,))
+                cur = await cur.execute("UPDATE containers SET status = 'available', last_used_at = NOW() WHERE ip_address = %s RETURNING ip_address", (ip_address,))
+                res = await cur.fetchone()
                 log("ControlPlaneDB", "mark_instance_as_available", status="updated")
+                return res.get("ip_address",None)
 
     async def mark_instance_as_failed(self, ip_address):
         log("ControlPlaneDB", "mark_instance_as_failed", ip_address=ip_address)

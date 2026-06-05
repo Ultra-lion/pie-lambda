@@ -54,7 +54,7 @@ async def main():
     await create_pool()
     print("pool created")
 
-    update_sql = "select status, count(*) from requests group by status"
+    update_sql = "select status, ip_address from containers"
     res = await execute_query(update_sql)
     print("Result:", res)
 

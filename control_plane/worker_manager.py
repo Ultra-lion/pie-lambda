@@ -145,18 +145,19 @@ async def proxy_request(request: Request, request_id:str, lambda_name:str):
             
             # Note: Fixed method name to plural and handling dict return
             worker_data = await control_plane_db.get_available_containers(lambda_name)
+            log("WorkerManager", "proxy_request", status="trying to get worker", lambda_name=lambda_name)
             if not worker_data:
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(1)
                 continue
 
             worker_ip = worker_data['ip_address']
             worker_event, worker_request_connection = listening_workers.get(worker_ip, (None, None))
-            
+            log("WorkerManager", "proxy_request", status="got worker", ip=worker_ip)
             if not worker_event:
                 # Gap: Worker exists in DB but hasn't reached /next registration yet
                 log("WorkerManager", "proxy_request", status="worker_registration_gap", ip=worker_ip)
                 await control_plane_db.mark_instance_as_available(worker_ip)
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(1)
                 continue
             
             if await worker_request_connection.is_disconnected():
@@ -173,7 +174,7 @@ async def proxy_request(request: Request, request_id:str, lambda_name:str):
             # Update request status to in_progress now that it's bound to a worker
             await control_plane_db.update_lambda_request(request_id, {"status": "in_progress"})
             worker_event.set()
-            
+            log("WorkerManager", "proxy_request", status="worker event set", ip=worker_ip)
             # 3. Wait for response
             await asyncio.wait_for(response_events[request_id].wait(), timeout=LAMBDA_TIMEOUT * 60)
             
@@ -201,17 +202,24 @@ async def runtime_invocation_next(request: Request):
     payload = None
     request_id = None
     try:
-        listening_workers[lambda_ip] = (asyncio.Event(), request)
-        try:
-            await control_plane_db.mark_instance_as_available(lambda_ip)
-        except Exception as e:
-            pass
+        event = asyncio.Event()
+        listening_workers[lambda_ip] = (event, request)
+        while True:
+            try:
+                ip_address = await control_plane_db.mark_instance_as_available(lambda_ip)
+                if not ip_address:
+                    await asyncio.sleep(1)
+                    continue
+                break
+            except Exception as e:
+                await asyncio.sleep(1)
+                continue
         
         while True:
             try:
-                event, req = listening_workers[lambda_ip]
+                log("WorkerManager", "runtime_invocation_next", status="waiting for request", ip=lambda_ip)
                 await asyncio.wait_for(event.wait(), timeout=LAMBDA_TIMEOUT * 60)
-                
+                log("WorkerManager", "runtime_invocation_next", status="got for request", ip=lambda_ip)
                 if await request.is_disconnected():
                     log("WorkerManager", "runtime_invocation_next", status="disconnected_after_wakeup", ip=lambda_ip)
                     payload = worker_payloads.pop(lambda_ip, None)
