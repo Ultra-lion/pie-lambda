@@ -382,7 +382,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                     """.format(self.rr_stuck_time, self.event_stuck_time))
                     pending_requests = await cur.fetchall()
                     
-                    await cur.execute("SELECT lambda_name, status, COUNT(*) as container_count FROM containers WHERE status IN ('available','provisioning', 'busy') GROUP BY lambda_name, status")
+                    await cur.execute("SELECT lambda_name, status, COUNT(*) as container_count FROM containers WHERE status IN ('available','provisioning', 'busy','deployed') GROUP BY lambda_name, status")
                     containers_counts = await cur.fetchall()
                     
                     stats = {}
@@ -391,16 +391,18 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                         st = row['status']
                         cnt = row['container_count']
                         if ln not in stats:
-                            stats[ln] = {'available': 0, 'provisioning': 0, 'reserved': 0, 'busy': 0}
+                            stats[ln] = {'available': 0, 'provisioning': 0, 'reserved': 0, 'busy': 0, 'deployed':0}
                         stats[ln][st] = cnt
                         
                     results = []
                     for req in pending_requests:
                         name = req['lambda_name']
                         pending_cnt = req['required_containers']
-                        s = stats.get(name, {'available': 0, 'provisioning': 0, 'reserved': 0, 'busy': 0})
+                        s = stats.get(name, {'available': 0, 'provisioning': 0, 'reserved': 0, 'busy': 0, 'deployed':0})
                         total_existing = sum(s.values())
-                        needed = pending_cnt - s['provisioning']
+                        needed = pending_cnt - (s['provisioning'] + s['available'] + s['deployed'])
+                        if needed <= 0:
+                            continue
                         allowed = max(0, self.individual_lambda_scale_limit - total_existing)
                         to_create = min(needed, allowed)
                         if to_create > 0:
