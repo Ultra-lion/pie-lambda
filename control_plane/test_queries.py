@@ -54,18 +54,22 @@ async def main():
     await create_pool()
     print("pool created")
 
-    update_sql = "select status, ip_address from containers"
-    res = await execute_query(update_sql)
-    print("Result:", res)
+    # update_sql = "select status, ip_address from containers"
+    # res = await execute_query(update_sql)
+    # print("Result:", res)
 
 
-    update_sql = "select status, count(*) from requests group by status"
-    res = await execute_query(update_sql)
-    print("Result:", res)
+    # update_sql = "select status, count(*) from requests group by status"
+    # res = await execute_query(update_sql)
+    # print("Result:", res)
 
-    update_sql = "select * from requests where status='failed' order by created_at desc limit 1"
-    res = await execute_query(update_sql)
-    print("Result:", res)
+    # update_sql = "select * from requests where status='failed' order by created_at desc limit 1"
+    # res = await execute_query(update_sql)
+    # print("Result:", res)
+
+    select_sql = "select * from requests where request_id='e5b497c4-0df5-4874-b502-df71571abd9e'"
+    res = await execute_query(select_sql)
+    print("Result: ", res)
 
     
 
