@@ -5,7 +5,7 @@
             "func_code_path": "./functions/hello_world",
             "func_handler_file_name": "handler.py",
             "lambda_handler_function_name": "lambda_handler",
-            "lambda_language": "python" # for now only python is supported
+            "lambda_language": "python"
         }
     },
     "//--- Control Plane Logging for debugging ---": "",
@@ -33,5 +33,6 @@
     "lambda_default_access_key_id": "test",
     "lambda_default_secret_access_key": "test",
     "db_type": "disk",
-    "db_path": "./pgdata"
+    "db_path": "./pgdata",
+    "do_ssl": true
 }

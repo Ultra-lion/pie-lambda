@@ -39,23 +39,86 @@ Create a `config.json` in the root directory:
 }
 ```
 
-### 3. Launch
-```bash
-# 1. Build the images
-python main.py --command build
+### 3. CLI Commands
+Use `main.py` to manage the project lifecycle. All commands require `sudo` if the control plane needs to bind to privileged ports (53, 443).
 
-# 2. Deploy and start the Control Plane
-python main.py --command deploy
+| Command | Description |
+| :--- | :--- |
+| `build` | **Initial Setup.** Creates the bridge network, builds the Control Plane base image, and builds all Lambda images defined in `config.json`. |
+| `deploy` | **Start Service.** Stops any existing Control Plane container and starts a fresh one, mounting certs and config. |
+| `rebuildlambdas` | **Fast Iteration.** Tears down and rebuilds ONLY the Lambda function images (useful when you change function code). |
+| `runexisting` | **Quick Restart.** Restarts existing (stopped) containers without rebuilding images. |
+| `shutdown` | **Stop.** Stops all running Pie-Lambda containers (non-destructive). |
+| `teardowncontainers` | **Cleanup.** Stops and completely removes all active containers. |
+| `teardownall` | **Factory Reset.** Removes all containers, Pie-Lambda images, and the custom Docker network. |
+
+---
+
+## 🔐 SSL & DNS: The "Magic" Explained
+
+To achieve zero-code changes in your Lambda functions, Pie-Lambda performs two types of "impersonation":
+
+### 1. DNS Hijacking
+The internal DNS server (running on port 53) intercepts queries for `*.amazonaws.com`. Instead of going to the real AWS, these requests are routed to the **Control Plane Load Balancer**.
+*   **Default:** Pie-Lambda creates a Docker bridge network and sets the Control Plane as the primary DNS for all worker containers.
+
+### 2. SSL Interception (MITM)
+Because the SDKs use HTTPS, Pie-Lambda generates a local **Certificate Authority (CA)** on every launch (or reuse).
+- It signs a certificate for `lambda.amazonaws.com`.
+- It bundles this local CA with the system's standard CA bundle (`certifi`).
+- This bundle is mounted into every Lambda container and set via the `AWS_CA_BUNDLE` environment variable.
+- Result: Your `boto3` client "trusts" the Control Plane as if it were the real AWS.
+
+---
+
+## 🌐 Advanced Networking Configuration
+
+### Transparent DNS (Default)
+In this mode, you don't even need to tell your code it's running locally.
+```python
+import boto3
+client = boto3.client('lambda') # Works automatically!
 ```
+The Worker containers are started with `--dns` pointing to the Control Plane.
 
-## 📖 How it Works: The Magic Under the Hood
+### Direct IP / Load Balancer Mode (No DNS Hijacking)
+If you prefer not to use DNS hijacking (or for testing from the host machine), you can point your clients directly to the Control Plane's IP.
 
-Pie-Lambda orchestrates five specialized components:
-1. **DNS Server (Port 53):** Redirects `*.amazonaws.com` to your local IP.
-2. **Load Balancer (Port 443):** Authenticates and queues incoming HTTPS requests.
-3. **Scaler:** Manages the Docker lifecycle, spawning new workers as demand increases.
-4. **Worker Manager (Port 80):** Bridges the AWS Runtime Interface (RIE) to your queued requests using high-speed async signaling.
-5. **Event Handler:** Manages asynchronous background tasks (`InvocationType: Event`) with persistent retry logic.
+1.  **Get the Control Plane IP:** Check it via `docker inspect pie-lambda-control-plane`.
+2.  **Configure Boto3:**
+    ```python
+    import boto3
+    # Use the Control Plane IP directly
+    client = boto3.client(
+        'lambda', 
+        endpoint_url='https://<CONTROL_PLANE_IP>', 
+        verify='/path/to/pie-lambda/certs/ca.crt' # Must trust the local CA
+    )
+    ```
+
+---
+
+## ⚙️ Configuration Reference (`config.json`)
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `lambda_funcs_to_deploy` | Object | Map of lambda function configurations. |
+| `enable_internal_logging` | Boolean | Enables verbose debug logging for all CP components. |
+| `global_scale_limit` | Integer | Maximum number of concurrent lambda containers (all types). |
+| `lambda_timeout_mins` | Integer | Max execution time for `RequestResponse` invocations. |
+| `db_type` | String | Storage type: `disk` (persistent) or `memory` (ephemeral). |
+
+### Scaling Settings
+- `available_container_scale_down_time`: Seconds an idle container stays alive before scaling down.
+- `busy_container_scale_down_time`: Seconds a container stays reserved for a request before returning to the pool.
+- `provisioning_container_scale_down_time`: Seconds to wait before cleaning up failed provisioning attempts.
+- `created_container_stuck_time_mins`: Threshold to detect containers that failed to reach "Running" state.
+
+### Reliability & Watchdog
+- `retry_event_count`: Max retries for `InvocationType: Event` requests.
+- `rr_stuck_time`: Minutes after which a `RequestResponse` call is marked as abandoned.
+- `watchdog_loop_time`: Interval (seconds) for health checks.
+- `watchdog_failure_limit`: Number of consecutive failures before the watchdog gives up on a component.
 
 ---
 
