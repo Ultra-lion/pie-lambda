@@ -415,6 +415,9 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                         s = stats.get(name, {'available': 0, 'provisioning': 0, 'reserved': 0, 'busy': 0, 'deployed':0})
                         total_existing = sum(s.values())
                         needed = pending_cnt - (s['provisioning'] + s['available'] + s['deployed'])
+                        print("s", s)
+                        print("needed", needed)
+                        print("pending_cnt", pending_cnt)
                         if needed <= 0:
                             continue
                         allowed = max(0, self.individual_lambda_scale_limit - total_existing)
@@ -422,6 +425,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                         if to_create > 0:
                             results.append({"lambda_name": name, "required_containers": to_create})
                     log("ControlPlaneDB", "calculate_scaleup_requests", result_count=len(results))
+                    print("scaleup_request", results)
                     return results
 
     async def get_component_health(self, component_name):
@@ -465,6 +469,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                     RETURNING *
                 """.format(stuck_interval), (self.individual_lambda_scale_limit,))
                 res = await cur.fetchall()
+                print("enqueued_events", res)
                 log("ControlPlaneDB", "get_enqueued_events", result_count=len(res))
                 return res
 
