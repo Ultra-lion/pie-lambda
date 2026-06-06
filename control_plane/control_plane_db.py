@@ -6,6 +6,7 @@ import asyncio
 from logger_utils import log
 import json
 import os
+from fastapi import HTTPException
 
 DEFAULT_CONTAINERS_LIMIT = 1
 
@@ -35,11 +36,12 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                     self.retry_event_count = config.get("retry_event_count", 3)
             except Exception:
                 pass
-        
+        self.db_conn_timeout = config.get("db_conn_timeout", 30)
         self.available_container_scale_down_time = config.get("available_container_scale_down_time", 5)
         self.busy_container_scale_down_time = config.get("busy_container_scale_down_time", 30)
         self.provisioning_container_scale_down_time = config.get("provisioning_container_scale_down_time", 1)
-      
+        lambda_funca_to_deploy = config.get("lambda_funcs_to_deploy",[])
+        self.valid_lambda_names = [lambda_func["func_name"] for lambda_func in lambda_funca_to_deploy if lambda_func.get("func_name")]
     
     async def create_pool(self):
             # 1. Back to clean string
@@ -56,7 +58,8 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                 configure=configure_conn, # Added this
                 min_size=1,
                 max_size=5,
-                open=False
+                open=False,
+                timeout=self.db_conn_timeout
             )
             await self.pool.open()
             await self.pool.wait()
@@ -247,10 +250,12 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                     (status in ('provisioning', 'deployed') AND COALESCE(last_used_at, created_at) < NOW() - INTERVAL '{} minutes')
                 OR 
                     (status = 'failed')
+                OR
+                    (lambda_name NOT IN ({}))
                     
                 )
                 RETURNING *;
-                """.format(self.available_container_scale_down_time, self.busy_container_scale_down_time, self.provisioning_container_scale_down_time))
+                """.format(self.available_container_scale_down_time, self.busy_container_scale_down_time, self.provisioning_container_scale_down_time, self.valid_lambda_names))
                 rows = await cur.fetchall()
                 log("ControlPlaneDB", "get_containers_to_destroy", found_count=len(rows))
                 return rows
@@ -266,6 +271,10 @@ class ControlPlaneDB(metaclass=SingletonMeta):
 
     async def create_lambda_request(self, request_id, lambda_func_name, request, event_type, request_body):
         log("ControlPlaneDB", "create_lambda_request", request_id=request_id, lambda_name=lambda_func_name)
+        if lambda_func_name not in self.valid_lambda_names:
+            log("ControlPlaneDB", "create_lambda_request", status="invalid_lambda_name")
+            raise HTTPException(status_code=400, detail="Invalid lambda function name")
+        
         if hasattr(request, "get"):
             event_type = event_type
             priority = 1 if event_type == "RequestResponse" else 2
@@ -377,11 +386,14 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                     SELECT lambda_name, COUNT(*) as required_containers
                     FROM requests
                     WHERE 
+                    (
                     (status = 'pending' AND event_type='RequestResponse' AND created_at > NOW() - INTERVAL '{} minutes')
                     OR (status = 'pending' AND event_type='Event' AND created_at > NOW() - INTERVAL '{} minutes')
+                    )
+                    AND (lambda_name in %s)
                     GROUP BY lambda_name
                     ORDER BY MIN(priority) ASC, MIN(created_at) ASC;
-                    """.format(self.rr_stuck_time, self.event_stuck_time))
+                    """.format(self.rr_stuck_time, self.event_stuck_time, self.valid_lambda_names))
                     pending_requests = await cur.fetchall()
                     
                     await cur.execute("SELECT lambda_name, status, COUNT(*) as container_count FROM containers WHERE status IN ('available','provisioning', 'busy','deployed') GROUP BY lambda_name, status")

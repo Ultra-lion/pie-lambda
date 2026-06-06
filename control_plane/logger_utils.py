@@ -30,13 +30,13 @@ funcs_to_print_data_for = [
     # "proxy_api_call",
     # "scaler_main_process",
     # "scale_up_lambda",
-    "proxy_request",
+    # "proxy_request",
     # "handle_enqueued_events",
     # "scaler_thread_loop"
-    "runtime_init_error",
-    "runtime_invocation_error",
-    "runtime_invocation_next",
-    "runtime_invocation_response",
+    # "runtime_init_error",
+    # "runtime_invocation_error",
+    # "runtime_invocation_next",
+    # "runtime_invocation_response",
 
 ]
 
