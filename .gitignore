@@ -222,6 +222,7 @@ certs/*
 .vscode/*
 */.vscode/*
 config.json
+config_old.json
 */config.json
 
 current_project_progress.md
@@ -249,3 +250,6 @@ points_left_to_do_may_28.md
 pgdata
 
 final_scouring.md
+
+
+outputs-*
