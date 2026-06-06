@@ -23,10 +23,22 @@ In most local environments, if `Lambda A` tries to invoke `Lambda B` via the AWS
 ## 🛠️ Installation & Setup
 
 ### 1. Prerequisites
-- **Linux/macOS** (Linux recommended for the best Docker bridge experience).
-- **Python 3.11+**
-- **Docker** installed and running.
-- **Sudo Access:** Required to bind to privileged ports (53, 80, 443).
+- **Operating System:** Linux or macOS (Linux highly recommended for networking features).
+- **Python 3.10+:** Required for structural pattern matching (`match` statements).
+- **Docker Engine:** Must be installed and running.
+- **Sudo / Root Privileges:** 
+  - Required to bind to privileged ports (53, 443).
+  - Required if your user is not in the `docker` group.
+
+### 2. System-Level Dependencies
+If you are installing dependencies manually (via `pip`), some packages like `cryptography` may require C-headers. Ensure your system has the following:
+- **Debian/Ubuntu:** `sudo apt-get install libssl-dev libffi-dev python3-dev`
+- **RHEL/CentOS:** `sudo yum install openssl-devel libffi-devel python3-devel`
+- **Alpine:** `apk add gcc musl-dev python3-dev libffi-dev openssl-dev`
+
+### 3. Execution Context
+> [!IMPORTANT]
+> **Run from Root:** You MUST execute `main.py` from the root of the `pie-lambda` repository. Relative paths for configuration and certificate generation are resolved based on the current working directory.
 
 > [!TIP]
 > **AWS Credentials:** While Pie-Lambda doesn't verify signatures, AWS SDKs still require credentials in the environment. You can use dummy values:
