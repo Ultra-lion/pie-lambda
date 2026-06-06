@@ -189,7 +189,7 @@ The `config.json` file is the central source of truth for your local Lambda envi
 | `enable_internal_logging` | Boolean | Enables verbose debug logging for all Control Plane components. |
 | `global_scale_limit` | Integer | Max concurrent containers **per lambda type**. |
 | `lambda_timeout_mins` | Integer | Max execution time for `RequestResponse` invocations. |
-| `db_type` | String | Storage backend: `disk` (persistent) or `memory` (ephemeral). |
+| `db_type` | String | Storage backend: `disk` (persistent) or `memory` (ephemeral). Default is `memory`|
 | `db_path` | String | Path to the database file (required if `db_type` is `disk`). |
 | `do_ssl` | Boolean | Toggles SSL interception. `true` = Port 443 (HTTPS), `false` = Port 444 (HTTP). |
 | `lambda_default_region` | String | Default AWS region injected into worker containers. |
