@@ -50,7 +50,11 @@ Create a `config.json` in the root directory:
 ```
 > [!IMPORTANT]
 > **Naming & Module Imports**
-> If your Lambda code uses internal module imports (e.g., `from my_service import ...`), the `func_name` defined in `config.json` **must exactly match** the module name used in your code. Pie-Lambda uses this name to structure the container's environment; a mismatch will cause a `ModuleNotFoundError` at runtime.
+> If your Lambda code uses internal module imports (e.g., `from my_service import ...`), the `func_name` defined in `config.json` **must exactly match** the module name used in your code. 
+> 
+> **Avoid Naming Conflicts:** Do not name your handler file (`func_handler_file_name`) the same as your `func_name` (e.g., avoid `my-service.py` if the function is named `my-service`). Pie-Lambda creates a virtual package named after the function to support these absolute imports; naming your file the same can cause a recursive import loop.
+> 
+> *Note: Pie-Lambda includes a safety fallback that detects these collisions and switches to a standard import structure, but advanced virtual package features will be disabled for that specific function.*
 
 
 ### 3. CLI Commands

@@ -4,3 +4,4 @@ fastapi[standard]
 aiosqlite
 cryptography
 certifi
+boto3

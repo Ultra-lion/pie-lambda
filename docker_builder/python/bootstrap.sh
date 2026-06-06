@@ -13,7 +13,8 @@ if [ ! -f /var/task/__init__.py ]; then
 fi
 
 # Create a symlink so python can find the package by its real name
-if [ ! -e "${LAMBDA_TASK_ROOT}/${LAMBDA_FUNC_NAME}" ]; then
+# Excellence: Check if a file with the same name exists to avoid import collisions
+if [ ! -e "${LAMBDA_TASK_ROOT}/${LAMBDA_FUNC_NAME}" ] && [ ! -f "${LAMBDA_TASK_ROOT}/${LAMBDA_FUNC_NAME}.py" ]; then
   ln -s . "${LAMBDA_TASK_ROOT}/${LAMBDA_FUNC_NAME}" || echo "Warning: Could not create symlink"
 fi
 
@@ -23,7 +24,14 @@ fi
 if [ -n "$MAIN_HANDLER_FILE_NAME" ] && [ -n "$LAMBDA_HANDLER_FUNC_NAME" ]; then
   echo "Poochie: Using handler from ENV variables..."
   MODULE_NAME="${MAIN_HANDLER_FILE_NAME%.*}"
-  NEW_HANDLER="${LAMBDA_FUNC_NAME}.${MODULE_NAME}.${LAMBDA_HANDLER_FUNC_NAME}"
+  
+  # If the module name matches the function name and the symlink was skipped,
+  # we must use a simpler handler string to avoid the double-lookup failure.
+  if [ "$MODULE_NAME" == "$LAMBDA_FUNC_NAME" ] && [ ! -L "${LAMBDA_TASK_ROOT}/${LAMBDA_FUNC_NAME}" ]; then
+    NEW_HANDLER="${MODULE_NAME}.${LAMBDA_HANDLER_FUNC_NAME}"
+  else
+    NEW_HANDLER="${LAMBDA_FUNC_NAME}.${MODULE_NAME}.${LAMBDA_HANDLER_FUNC_NAME}"
+  fi
   # Consume the CMD argument if it was passed so it doesn't pollute $@
   [ $# -gt 0 ] && shift
 elif [ $# -gt 0 ]; then

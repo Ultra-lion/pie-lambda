@@ -165,6 +165,11 @@ def deploy_control_plane_docker(config:dict):
             'bind':'/var/run/docker.sock',
             'mode':'rw'
         },
+        "/home/rohan/Desktop/FUN-Projects/pie-lambda/control_plane":{
+            'bind':'/app/control_plane',
+            'mode':'rw'
+        }
+
     }
     
     control_plane_container = client.containers.create(

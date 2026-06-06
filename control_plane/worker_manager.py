@@ -270,6 +270,7 @@ async def runtime_init_error(sdk_date: str, request: Request):
     lambda_ip = request.client.host
     error_payload = await request.json()
     await control_plane_db.mark_instance_as_failed(lambda_ip)
+    print(error_payload)
     log("WorkerManager", "runtime_init_error", ip=lambda_ip, error=error_payload)
     return {"status": "accepted"}
 
