@@ -4,6 +4,10 @@
 
 Pie-Lambda is a high-performance local control plane that allows you to run complex AWS Lambda architectures on your local machine with **zero code changes**. Unlike standard emulators that require you to override `endpoint_url` in every Boto3 client, Pie-Lambda uses **Transparent DNS Hijacking** to intercept and route AWS traffic automatically.
 
+> [!NOTE]
+> Currently, Pie-Lambda supports **Python** runtimes and intercepts any traffic matching the pattern: `lambda.*amazonaws.*com.*`
+
+
 ## 🚀 The "Killer Feature": Recursive Execution
 In most local environments, if `Lambda A` tries to invoke `Lambda B` via the AWS SDK, the call fails or requires a complex networking setup. 
 
@@ -73,6 +77,26 @@ Because the SDKs use HTTPS, Pie-Lambda generates a local **Certificate Authority
 - This bundle is mounted into every Lambda container and set via the `AWS_CA_BUNDLE` environment variable.
 - Result: Your `boto3` client "trusts" the Control Plane as if it were the real AWS.
 
+#### 🗝️ Certificate Management
+On the first run, Pie-Lambda generates a `certs/` directory containing the keys and certificates required for MITM interception:
+- `ca.crt` / `ca.key`: Your local Certificate Authority.
+- `server.crt` / `server.key`: Certificates for the Load Balancer.
+
+To enable SSL verification in your own external containers, you must mount the CA certificate and set the `AWS_CA_BUNDLE` environment variable:
+
+```bash
+docker run -d \
+  -v $(pwd)/certs:/etc/ssl/certs \
+  -e AWS_CA_BUNDLE=/etc/ssl/certs/ca.crt \
+  --dns <CONTROL_PLANE_IP> \
+  --network lambda_bridge \
+  my-app
+```
+
+> [!TIP]
+> If you set `do_ssl: false` in `config.json`, the Load Balancer will bypass SSL interception and listen on port **444** (plain HTTP).
+
+
 ---
 
 ## 🌐 Advanced Networking Configuration
@@ -132,8 +156,7 @@ Don't worry about standard internet traffic; Pie-Lambda's DNS is recursive. Requ
 ---
 
 ## ⚙️ Configuration Reference (`config.json`)
-
-The `config.json` file is the central source of truth for your local Lambda environment. By default, `main.py` looks for this file in the project root.
+The `config.json` file is the central source of truth for your local Lambda environment. By default, `main.py` looks for this file in the project root. Refer to `config.json.template` for a complete list of all default values.
 
 > [!NOTE]
 > You can specify a custom configuration path using the `--config` flag.
@@ -144,11 +167,12 @@ The `config.json` file is the central source of truth for your local Lambda envi
 | Field | Type | Description |
 | :--- | :--- | :--- |
 | `lambda_funcs_to_deploy` | Object | Map of lambda function configurations. |
-| `enable_internal_logging` | Boolean | Enables verbose debug logging for all CP components. |
-| `global_scale_limit` | Integer | Maximum number of concurrent lambda containers (all types). Note: for each type of lambda, there will be a separate pool of containers with global_scale_limit applied separately to each of them. for example you can have 3 lambdas with global_scale_limit number of containers deployed for each of them. |
-
+| `enable_internal_logging` | Boolean | Enables verbose debug logging for all Control Plane components. |
+| `global_scale_limit` | Integer | Max concurrent containers **per lambda type**. (e.g., if set to 3, each function gets its own pool of up to 3 containers). |
 | `lambda_timeout_mins` | Integer | Max execution time for `RequestResponse` invocations. |
-| `db_type` | String | Storage type: `disk` (persistent) or `memory` (ephemeral). |
+| `db_type` | String | Storage backend: `disk` (persistent) or `memory` (ephemeral). |
+| `do_ssl` | Boolean | Toggles SSL interception. `true` = Port 443 (HTTPS), `false` = Port 444 (HTTP). |
+
 
 ### Scaling Settings
 - `available_container_scale_down_time`: Seconds an idle container stays alive before scaling down.
@@ -163,6 +187,29 @@ The `config.json` file is the central source of truth for your local Lambda envi
 - `watchdog_failure_limit`: Number of consecutive failures before the watchdog gives up on a component.
 
 ---
+
+### AWS Lambda Parallels:
+
+| Pie-Lambda Component | AWS Lambda Equivalent | Description |
+| :--- | :--- | :--- |
+| **Control Plane** | **AWS Lambda Service** | Manages the lifecycle of all Lambda functions. |
+| **Worker Container** | **Lambda Execution Environment** | The isolated environment where your function code runs. |
+| **Scaler** | **AWS Auto Scaling** | Automatically adjusts the number of running containers based on traffic. |
+| **Load Balancer** | **AWS Application Load Balancer (ALB)** | Distributes incoming requests across healthy worker containers. |
+| **DNS Server** | **AWS Route 53** | Resolves domain names to IP addresses. |
+| **Supervisor** | **AWS Health Dashboard** | Monitors the health of all components and restarts them if they fail. |
+
+
+### 🧠 Expected Behavior
+
+#### 🔄 Cloud Parity
+- **At-Least-Once Execution:** Like real AWS Lambda, there is a small chance of duplicate executions. We recommend using **idempotent functions**.
+- **Execution Order:** The order of `Event` type (asynchronous) invocations is not guaranteed.
+
+#### 🏗️ Under the Hood
+Pie-Lambda uses high-fidelity emulation by leveraging official AWS Lambda base images. It implements the **Lambda Runtime API** directly, allowing it to interface with existing Lambda Runtimes without any modifications to your code.
+
+
 
 ## 🛡️ Excellence, Not Perfection
 Pie-Lambda was built for developers who need a **snappy**, **reliable** environment for local cloud development without the overhead of mocking the entire AWS ecosystem.
