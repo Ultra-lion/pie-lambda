@@ -17,7 +17,7 @@ In most local environments, if `Lambda A` tries to invoke `Lambda B` via the AWS
 - 🧠 **Smart Signaling:** Uses `asyncio` event-driven IPC for near-zero latency (no sluggish DB polling).
 - 🛡️ **Self-Healing:** A dedicated supervisor monitors and restarts control plane components (Load Balancer, DNS, Scaler) if they crash.
 - ⚡ **Connection-Aware:** Real-time monitoring of client connections ensures compute is never wasted on stale requests.
-- 🐳 **Atomic Container Management:** Rapid scale-up and scale-down logic with "Ghost Container" detection to keep your Docker environment clean.
+- 🐳 **Atomic Container Management:** Rapid scale-up and scale-down logic with **Ghost Container sync**—automatically reclaims leaked resources from previous crashes.
 - 🔐 **Built-in Security:** Automatically generates and injects local CA certificates for seamless SSL/TLS interception.
 
 ## 🛠️ Installation & Setup
@@ -27,6 +27,12 @@ In most local environments, if `Lambda A` tries to invoke `Lambda B` via the AWS
 - **Python 3.11+**
 - **Docker** installed and running.
 - **Sudo Access:** Required to bind to privileged ports (53, 80, 443).
+
+> [!TIP]
+> **AWS Credentials:** While Pie-Lambda doesn't verify signatures, AWS SDKs still require credentials in the environment. You can use dummy values:
+> `AWS_ACCESS_KEY_ID=testing`
+> `AWS_SECRET_ACCESS_KEY=testing`
+> `AWS_DEFAULT_REGION=us-east-1`
 
 ### 2. Configure your Functions
 Create a `config.json` in the root directory:
@@ -206,8 +212,19 @@ The `config.json` file is the central source of truth for your local Lambda envi
 - **At-Least-Once Execution:** Like real AWS Lambda, there is a small chance of duplicate executions. We recommend using **idempotent functions**.
 - **Execution Order:** The order of `Event` type (asynchronous) invocations is not guaranteed.
 
-#### 🏗️ Under the Hood
+### 🏗️ Under the Hood
 Pie-Lambda uses high-fidelity emulation by leveraging official AWS Lambda base images. It implements the **Lambda Runtime API** directly, allowing it to interface with existing Lambda Runtimes without any modifications to your code.
+
+#### 🔌 Internal Routing & Ports
+Pie-Lambda orchestrates several layers of communication to achieve zero-latency transparency:
+
+| Port | Purpose | Scope |
+| :--- | :--- | :--- |
+| **53** | **DNS Server** | Hijacks `*.amazonaws.com` requests. |
+| **443** | **Control Plane (SSL)** | Emulates the public AWS Lambda Service API (Port 443). |
+| **444** | **Control Plane (Non-SSL)** | Used when `do_ssl: false` for easier local debugging. |
+| **80** | **Runtime API** | Internal endpoint for the Lambda Runtime Interface (RIE). |
+| **UDS** | **Unix Domain Sockets** | High-speed IPC for signaling between Control Plane sub-processes. |
 
 
 
