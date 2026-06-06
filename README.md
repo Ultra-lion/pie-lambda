@@ -38,6 +38,10 @@ Create a `config.json` in the root directory:
   }
 }
 ```
+> [!IMPORTANT]
+> **Naming & Module Imports**
+> If your Lambda code uses internal module imports (e.g., `from my_service import ...`), the `func_name` defined in `config.json` **must exactly match** the module name used in your code. Pie-Lambda uses this name to structure the container's environment; a mismatch will cause a `ModuleNotFoundError` at runtime.
+
 
 ### 3. CLI Commands
 Use `main.py` to manage the project lifecycle. All commands require `sudo` if the control plane needs to bind to privileged ports (53, 443).
@@ -96,15 +100,53 @@ If you prefer not to use DNS hijacking (or for testing from the host machine), y
     )
     ```
 
+### 🐳 Integrating Your Containers (Transparent DNS)
+
+To make an external container (like your main app or a sidecar) use Pie-Lambda's transparent interception, follow these steps:
+
+1.  **Retrieve Control Plane IP:**
+    ```bash
+    CONTROL_PLANE_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' pie-lambda-control-plane)
+    ```
+
+2.  **Launch Your Container:**
+    Run your container with the `--dns` flag pointing to the Control Plane and attach it to the `lambda_bridge` network.
+    ```bash
+    docker run -d \
+      --name my-app \
+      --network lambda_bridge \
+      --dns $CONTROL_PLANE_IP \
+      my-app-image
+    ```
+
+#### 🛠️ Accessing Localhost Services
+If your application needs to talk back to a service running on your **host machine** (outside Docker), use the magic domain:
+- **Host:** `pie-lambda.local`
+- **Port:** Use the same port as your host service.
+
+The Control Plane's DNS automatically resolves `pie-lambda.local` to the host's bridge gateway.
+
+#### 🌐 External Traffic
+Don't worry about standard internet traffic; Pie-Lambda's DNS is recursive. Requests to `google.com` or other external domains are automatically forwarded to the outside internet.
+
 ---
 
 ## ⚙️ Configuration Reference (`config.json`)
+
+The `config.json` file is the central source of truth for your local Lambda environment. By default, `main.py` looks for this file in the project root.
+
+> [!NOTE]
+> You can specify a custom configuration path using the `--config` flag.
+> 
+> **Important:** Any changes made to `config.json` require a control plane redeployment (`python3 main.py deploy`) to take effect.
+
 
 | Field | Type | Description |
 | :--- | :--- | :--- |
 | `lambda_funcs_to_deploy` | Object | Map of lambda function configurations. |
 | `enable_internal_logging` | Boolean | Enables verbose debug logging for all CP components. |
-| `global_scale_limit` | Integer | Maximum number of concurrent lambda containers (all types). |
+| `global_scale_limit` | Integer | Maximum number of concurrent lambda containers (all types). Note: for each type of lambda, there will be a separate pool of containers with global_scale_limit applied separately to each of them. for example you can have 3 lambdas with global_scale_limit number of containers deployed for each of them. |
+
 | `lambda_timeout_mins` | Integer | Max execution time for `RequestResponse` invocations. |
 | `db_type` | String | Storage type: `disk` (persistent) or `memory` (ephemeral). |
 
