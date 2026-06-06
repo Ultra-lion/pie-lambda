@@ -43,7 +43,7 @@ async def load_test(control_plane_ip, lambda_name, iters, ramp_up_factor):
 control_plane_ip = "172.18.0.2"
 lambda_name = "pie_lambda_module_levels_test"
 iters = 10
-ramp_up_factor = 1
+ramp_up_factor = 10
 
 asyncio.run(load_test(control_plane_ip, lambda_name, iters, ramp_up_factor))
     
