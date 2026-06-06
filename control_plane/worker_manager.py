@@ -175,11 +175,17 @@ async def proxy_request(request: Request, request_id:str, lambda_name:str):
             worker_event.set()
             log("WorkerManager", "proxy_request", status="worker event set", ip=worker_ip)
             # 3. Wait for response
-            await asyncio.wait_for(response_events[request_id].wait(), timeout=LAMBDA_TIMEOUT * 60)
+            try:
+                await asyncio.wait_for(response_events[request_id].wait(), timeout=LAMBDA_TIMEOUT * 60)
+            except asyncio.TimeoutError:
+                pass 
             
             res = await control_plane_db.get_request_status(request_id)
             if res.get("status")=="pending" and res.get("response_data")=="worker_disconnected":
                 continue
+            elif res.get("status") in ["pending","in_progress"]:
+                raise HTTPException(status_code=504, detail="workers took too long")
+            
 
             return json.loads(res['response_data']) if res['response_data'] else {}
         
