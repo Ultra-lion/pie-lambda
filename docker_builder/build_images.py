@@ -367,7 +367,10 @@ def shutdown(config:dict):
                 break
     
     for container in matching_containers:
-        container.stop()
+        try:
+            container.stop()
+        except Exception as e:
+            print(f"Could Not stop container {container.name} Error: {e}")
 
 def run_existing(config:dict):
     all_images = client.images.list()
@@ -377,15 +380,15 @@ def run_existing(config:dict):
             if BASE_SUBSTR.lower() in tag.lower():
                 matching_images.append(image)
                 break
-    print(matching_images)
     matching_containers = []
     all_containers_list = client.containers.list(all=True)
     for image in matching_images:
         for container in all_containers_list:
-            print(image.id, container.image.id)
             if image.id == container.image.id:
                 matching_containers.append(container)
                 break
-    print(matching_containers)
     for container in matching_containers:
-        container.start()
+        try:
+            container.start()
+        except Exception as e:
+            print(f"Could Not start container {container.name} Error: {e}")
