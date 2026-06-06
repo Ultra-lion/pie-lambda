@@ -149,6 +149,19 @@ To make an external container (like your main app or a sidecar) use Pie-Lambda's
       my-app-image
     ```
 
+
+### 📦 Dependencies & Environment
+Pie-Lambda automatically handles dependencies and environment variables for your functions during the `build` phase:
+
+- **`.env`**: Place a `.env` file in your `func_code_path` to inject environment variables into the Lambda container.
+- **`requirements.txt`**: Standard Python requirements file in your `func_code_path` will be automatically installed during the Docker build.
+- **Lambda Layers**:native Layer support can be easily workaround by including any "Layer" dependencies directly in your `requirements.txt`.
+
+
+> [!TIP]
+> If you update your `requirements.txt` or `.env`, remember to run `python3 main.py rebuildlambdas` to apply the changes to your container images.
+
+
 #### 🛠️ Accessing Localhost Services
 If your application needs to talk back to a service running on your **host machine** (outside Docker), use the magic domain:
 - **Host:** `pie-lambda.local`
@@ -174,23 +187,28 @@ The `config.json` file is the central source of truth for your local Lambda envi
 | :--- | :--- | :--- |
 | `lambda_funcs_to_deploy` | Object | Map of lambda function configurations. |
 | `enable_internal_logging` | Boolean | Enables verbose debug logging for all Control Plane components. |
-| `global_scale_limit` | Integer | Max concurrent containers **per lambda type**. (e.g., if set to 3, each function gets its own pool of up to 3 containers). |
+| `global_scale_limit` | Integer | Max concurrent containers **per lambda type**. |
 | `lambda_timeout_mins` | Integer | Max execution time for `RequestResponse` invocations. |
 | `db_type` | String | Storage backend: `disk` (persistent) or `memory` (ephemeral). |
+| `db_path` | String | Path to the database file (required if `db_type` is `disk`). |
 | `do_ssl` | Boolean | Toggles SSL interception. `true` = Port 443 (HTTPS), `false` = Port 444 (HTTP). |
-
+| `lambda_default_region` | String | Default AWS region injected into worker containers. |
 
 ### Scaling Settings
 - `available_container_scale_down_time`: Seconds an idle container stays alive before scaling down.
 - `busy_container_scale_down_time`: Seconds a container stays reserved for a request before returning to the pool.
 - `provisioning_container_scale_down_time`: Seconds to wait before cleaning up failed provisioning attempts.
+- `docker_sdk_check_interval_mins`: Interval for the scaler to sync with the Docker daemon.
 - `created_container_stuck_time_mins`: Threshold to detect containers that failed to reach "Running" state.
 
 ### Reliability & Watchdog
 - `retry_event_count`: Max retries for `InvocationType: Event` requests.
 - `rr_stuck_time`: Minutes after which a `RequestResponse` call is marked as abandoned.
+- `event_stuck_time`: Minutes after which an `Event` type request is marked as abandoned.
 - `watchdog_loop_time`: Interval (seconds) for health checks.
+- `process_kill_time`: Seconds to wait for a component to stop before forcing a kill.
 - `watchdog_failure_limit`: Number of consecutive failures before the watchdog gives up on a component.
+
 
 ---
 
@@ -198,6 +216,7 @@ The `config.json` file is the central source of truth for your local Lambda envi
 
 | Pie-Lambda Component | AWS Lambda Equivalent | Description |
 | :--- | :--- | :--- |
+
 | **Control Plane** | **AWS Lambda Service** | Manages the lifecycle of all Lambda functions. |
 | **Worker Container** | **Lambda Execution Environment** | The isolated environment where your function code runs. |
 | **Scaler** | **AWS Auto Scaling** | Automatically adjusts the number of running containers based on traffic. |
