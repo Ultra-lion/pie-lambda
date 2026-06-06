@@ -164,14 +164,23 @@ async def list_available_images():
 
 
 def run_https():
-    uvicorn.run(
-        app, 
-        host="0.0.0.0", 
-        port=443,
-        ssl_keyfile="/app/control_plane/server.key", 
-        ssl_certfile="/app/control_plane/server.crt",
-        log_level="DEBUG"
-    )
+    is_secure = config.get("do_ssl", True)
+    if is_secure:
+        uvicorn.run(
+            app, 
+            host="0.0.0.0", 
+            port=443,
+            ssl_keyfile="/app/control_plane/server.key", 
+            ssl_certfile="/app/control_plane/server.crt",
+            log_level="DEBUG"
+        )
+    else:
+        uvicorn.run(
+            app, 
+            host="0.0.0.0", 
+            port=444,
+            log_level="DEBUG"
+        )
 
 if __name__=="__main__":
     run_https()

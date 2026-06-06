@@ -81,7 +81,10 @@ def restart_process(name):
         return None
     match name:
         case "LOAD_BALANCER":
-            kill_processes_on_ports([443])
+            if config.get("do_ssl", True):
+                kill_processes_on_ports([443])
+            else:
+                kill_processes_on_ports([444])
         case "WORKER_MANAGER":
             kill_processes_on_ports([80])
         case "DNS_SERVER":
