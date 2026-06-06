@@ -40,8 +40,8 @@ class ControlPlaneDB(metaclass=SingletonMeta):
         self.available_container_scale_down_time = config.get("available_container_scale_down_time", 5)
         self.busy_container_scale_down_time = config.get("busy_container_scale_down_time", 30)
         self.provisioning_container_scale_down_time = config.get("provisioning_container_scale_down_time", 1)
-        lambda_funca_to_deploy = config.get("lambda_funcs_to_deploy",[])
-        self.valid_lambda_names = [lambda_func["func_name"] for lambda_func in lambda_funca_to_deploy if lambda_func.get("func_name")]
+        lambda_funcs_to_deploy = config.get("lambda_funcs_to_deploy",{})
+        self.valid_lambda_names = [lambda_func["func_name"] for lambda_func in lambda_funcs_to_deploy.values() if lambda_func.get("func_name")]
     
     async def create_pool(self):
             # 1. Back to clean string
@@ -255,7 +255,7 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                     
                 )
                 RETURNING *;
-                """.format(self.available_container_scale_down_time, self.busy_container_scale_down_time, self.provisioning_container_scale_down_time, self.valid_lambda_names))
+                """.format(self.available_container_scale_down_time, self.busy_container_scale_down_time, self.provisioning_container_scale_down_time, ','.join(f"'{name}'" for name in self.valid_lambda_names)))
                 rows = await cur.fetchall()
                 log("ControlPlaneDB", "get_containers_to_destroy", found_count=len(rows))
                 return rows
@@ -390,10 +390,10 @@ class ControlPlaneDB(metaclass=SingletonMeta):
                     (status = 'pending' AND event_type='RequestResponse' AND created_at > NOW() - INTERVAL '{} minutes')
                     OR (status = 'pending' AND event_type='Event' AND created_at > NOW() - INTERVAL '{} minutes')
                     )
-                    AND (lambda_name in %s)
+                    AND (lambda_name in ({}))
                     GROUP BY lambda_name
                     ORDER BY MIN(priority) ASC, MIN(created_at) ASC;
-                    """.format(self.rr_stuck_time, self.event_stuck_time, self.valid_lambda_names))
+                    """.format(self.rr_stuck_time, self.event_stuck_time, ','.join(f"'{name}'" for name in self.valid_lambda_names)))
                     pending_requests = await cur.fetchall()
                     
                     await cur.execute("SELECT lambda_name, status, COUNT(*) as container_count FROM containers WHERE status IN ('available','provisioning', 'busy','deployed') GROUP BY lambda_name, status")
