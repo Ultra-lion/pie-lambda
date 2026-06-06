@@ -128,8 +128,6 @@ async def proxy_request(request: Request, request_id:str, lambda_name:str):
     
     start_time = datetime.datetime.now(timezone.utc)
     try:
-        # Poke scaler to ensure we have workers starting
-        await scaler_client.poke_scaler()
         
         worker_ip = None
         worker_event = None
@@ -147,6 +145,8 @@ async def proxy_request(request: Request, request_id:str, lambda_name:str):
             worker_data = await control_plane_db.get_available_containers(lambda_name)
             log("WorkerManager", "proxy_request", status="trying to get worker", lambda_name=lambda_name, request_id=request_id)
             if not worker_data:
+                # Poke scaler to ensure we have workers starting
+                await scaler_client.poke_scaler()
                 await asyncio.sleep(1)
                 continue
 
