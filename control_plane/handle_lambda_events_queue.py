@@ -50,7 +50,9 @@ class LambdaQueueHandler:
 
     async def handle_enqueued_events(self):
         log("EventHandler", "handle_enqueued_events", status="starting")
-        asyncio.create_task(self.start_heartbeat("EVENTS_HANDLER"))
+        heartbeat_task = asyncio.create_task(self.start_heartbeat("EVENTS_HANDLER"))
+        self.active_tasks.add(heartbeat_task)
+        heartbeat_task.add_done_callback(self.active_tasks.discard)
         while True:
             try:
                 enqueued_events = await self.control_plane_db.get_enqueued_events()
