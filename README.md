@@ -14,7 +14,8 @@ In most local environments, if `Lambda A` tries to invoke `Lambda B` via the AWS
 **Pie-Lambda solves this.** Because it intercepts traffic at the DNS level, your Boto3/SDK calls within a container are automatically routed back to the control plane, allowing for seamless, infinite recursion of Lambda calls—just like in the real cloud.
 
 ## ✨ Key Features
-- 🧠 **Smart Signaling:** Uses `asyncio` event-driven IPC for near-zero latency (no sluggish DB polling).
+- 🧠 **Smart Signaling:** Uses **Unix Domain Sockets (IPC)** for near-zero latency scaling pokes and an event-driven architecture.
+- 🗄️ **Serialized State:** A dedicated **PGlite Server** process handles connection multiplexing, serializing queries to a single-writer DB to ensure absolute data integrity across multiple processes.
 - 🛡️ **Self-Healing:** A dedicated supervisor monitors and restarts control plane components (Load Balancer, DNS, Scaler) if they crash.
 - ⚡ **Connection-Aware:** Real-time monitoring of client connections ensures compute is never wasted on stale requests.
 - 🐳 **Atomic Container Management:** Rapid scale-up and scale-down logic with **Ghost Container sync**—automatically reclaims leaked resources from previous crashes.
@@ -62,7 +63,7 @@ Create a `config.json` in the root directory:
 ```
 > [!IMPORTANT]
 > **Naming & Module Imports**
-> If your Lambda code uses internal module imports (e.g., `from my_service import ...`), the `func_name` defined in `config.json` **must exactly match** the module name used in your code. 
+> If your Lambda code uses internal module imports (e.g., `from my_service import ...`), the **`func_name`** in your `config.json` must match the internal Python module structure. **The Nexus** uses this to set up the container environment.
 > 
 > **Avoid Naming Conflicts:** Do not name your handler file (`func_handler_file_name`) the same as your `func_name` (e.g., avoid `my-service.py` if the function is named `my-service`). Pie-Lambda creates a virtual package named after the function to support these absolute imports; naming your file the same can cause a recursive import loop.
 > 
@@ -247,19 +248,35 @@ The `config.json` file is the central source of truth for your local Lambda envi
 - **At-Least-Once Execution:** Like real AWS Lambda, there is a small chance of duplicate executions. We recommend using **idempotent functions**.
 - **Execution Order:** The order of `Event` type (asynchronous) invocations is not guaranteed.
 
-### 🏗️ Under the Hood
-Pie-Lambda uses high-fidelity emulation by leveraging official AWS Lambda base images. It implements the **Lambda Runtime API** directly, allowing it to interface with existing Lambda Runtimes without any modifications to your code.
+### 🏗️ Internal Architecture & Communication
 
-#### 🔌 Internal Routing & Ports
-Pie-Lambda orchestrates several layers of communication to achieve zero-latency transparency:
+Pie-Lambda is designed as a distributed system of micro-services running on your local machine.
 
-| Port | Purpose | Scope |
+#### 🔌 Logic Flow & Protocols
+1.  **Transparent DNS**: Intercepts `lambda.*amazonaws.*com.*` and redirects traffic to the **Load Balancer**.
+2.  **Load Balancer (The Dispatcher)**: 
+    - **Synchronous (`RequestResponse`)**: Calls **The Nexus** API directly for immediate execution.
+    - **Asynchronous (`Event`)**: Commits the request to the **PGlite DB** (acting as a local SQS) and returns an immediate `202 Accepted`.
+3.  **Event Queue Worker (The Consumer)**: 
+    - Continually polls the PGlite DB for pending events.
+    - Proxies the execution to **The Nexus's** internal API.
+4.  **The Nexus (The Core)**: The central hub of the control plane. It implements the **Lambda Runtime Interface API** (RIE), manages worker long-polling (`/next`), and pokes the Scaler over high-speed **Unix Domain Sockets (IPC)**.
+5.  **The Muscle (Scaler)**: Responds to IPC pokes to manage the Docker lifecycle of worker containers.
+
+#### 🗄️ The Data Backbone: PGlite Multiplexer
+To prevent lock contention and race conditions in a multi-process environment, Pie-Lambda does not access the database directly from every component. 
+- A standalone **PGlite Server** process owns the database.
+- All components connect to this server, which **multiplexes and serializes** queries.
+- This ensures a **Single-Writer** pattern for the PGlite DB, guaranteeing atomic state changes across DNS, LB, and **The Nexus** components.
+
+#### 🛰️ Port Mapping
+| Port | Purpose | Protocol |
 | :--- | :--- | :--- |
-| **53** | **DNS Server** | Hijacks `*.amazonaws.com` requests. |
-| **443** | **Control Plane (SSL)** | Emulates the public AWS Lambda Service API (Port 443). |
-| **444** | **Control Plane (Non-SSL)** | Used when `do_ssl: false` for easier local debugging. |
-| **80** | **Runtime API** | Internal endpoint for the Lambda Runtime Interface (RIE). |
-| **UDS** | **Unix Domain Sockets** | High-speed IPC for signaling between Control Plane sub-processes. |
+| **53** | **DNS Server** | UDP/TCP (Hijacking) |
+| **443** | **Control Plane (SSL)** | HTTPS (Public Service API) |
+| **444** | **Control Plane (Non-SSL)** | HTTP (Debug API) |
+| **80** | **Runtime API** | HTTP (Internal RIE via **The Nexus**) |
+| **UDS** | **Unix Domain Sockets** | IPC (**The Nexus** -> Scaler) |
 
 
 
