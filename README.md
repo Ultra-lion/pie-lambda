@@ -105,6 +105,8 @@ On the first run, Pie-Lambda generates a `certs/` directory containing the keys 
 - `ca.crt` / `ca.key`: Your local Certificate Authority.
 - `server.crt` / `server.key`: Certificates for the Load Balancer.
 
+**Lifecycle & Rotation:** Generated certificates carry a 1-year validity period. **Note: Rotation is not automatic.** If you need to refresh the environment or handle credential mismatches, removing the `certs/` directory forces the control plane to re-initialize its local CA and server certificates during startup.
+
 To enable SSL verification in your own external containers, you must mount the CA certificate and set the `AWS_CA_BUNDLE` environment variable:
 
 ```bash

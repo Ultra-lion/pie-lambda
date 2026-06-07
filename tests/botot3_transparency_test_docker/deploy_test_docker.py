@@ -26,7 +26,7 @@ def build_and_run_test(build_image):
             existing_image = client.images.get(image_tag)
             if existing_image:
                 existing_image.remove()
-            client.images.build(path=BASE_DIR, tag=image_tag)
+            client.images.build(path=BASE_DIR, tag=image_tag, rm=True)
         else:
             client.images.get(image_tag)
     except docker.errors.ImageNotFound:

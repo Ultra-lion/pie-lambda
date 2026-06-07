@@ -39,9 +39,9 @@ def test_lambda_connectivity():
         # The FunctionName triggers the path interception in your control plane.
         # Payload must be bytes or a file-like object.
         invoke_response = client.invoke(
-            FunctionName='mps_row_validator_2',
+            FunctionName='pie_test_lambda_1',
             InvocationType='RequestResponse', # Sync call
-            Payload=json.dumps({"message": "Hello from Boto3"}).encode('utf-8')
+            Payload=json.dumps({"payload": "Hello from Boto3"}).encode('utf-8')
         )
         
         print("Success! Response metadata:")
