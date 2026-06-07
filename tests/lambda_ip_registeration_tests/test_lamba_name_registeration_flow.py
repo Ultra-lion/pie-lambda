@@ -9,12 +9,23 @@ async def test(control_plane_ip, lambda_name, test_payload):
     test_payload["payload"] = consistency_key
     result = {}
     result["consistency_key"] = consistency_key
+    headers={}
+    invocation_type = test_payload.get("invocation_type","RequestResponse")
+    if invocation_type == "RequestResponse":
+        headers = {
+            "x-amz-invocation-type":"RequestResponse"
+        }
+    else:
+        headers = {
+            "x-amz-invocation-type":"Event"
+        }
     try:
         async with httpx.AsyncClient(verify=False) as client:
             resp = await client.post(
                 f"https://{control_plane_ip}:443/12-12-1122/functions/{lambda_name}/invocations",
                 json=test_payload,
-                timeout=30
+                timeout=30,
+                headers=headers
             )
             if resp.status_code != 200:
                 result["error"] = resp.text
@@ -55,7 +66,9 @@ async def load_test(control_plane_ip, lambda_name, test_payload, iters, ramp_up_
 
 control_plane_ip = "172.18.0.2"
 lambda_name = "pie_test_lambda_1"
-test_payload = {}
+test_payload = {
+    "invocation_type":"Event"
+}
 iters = 10
 ramp_up_factor = 50
 
