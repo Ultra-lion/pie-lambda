@@ -47,3 +47,4 @@ def log(service, function, **datapoints):
         datapoints_str = " ".join([f"{k}: {v}" for k, v in datapoints.items()])
         logger.info(f"[{service}] [{function}] {datapoints_str}")
 
+

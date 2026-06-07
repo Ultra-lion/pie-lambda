@@ -8,3 +8,4 @@ class LambdaImageConfig(BaseModel):
     
     class Config:
         extra = "allow"
+

@@ -34,3 +34,4 @@ start().catch((err) => {
   console.error('Failed to start PGlite server:', err);
   process.exit(1);
 });
+
