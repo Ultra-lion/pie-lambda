@@ -45,6 +45,7 @@ async def startup_event(app: FastAPI):
     global control_plane_db
     control_plane_db = ControlPlaneDB()
     heartbeat_task = loop.create_task(start_heartbeat("LOAD_BALANCER"))
+    background_tasks.add(heartbeat_task)
     heartbeat_task.add_done_callback(background_tasks.discard)
     log("LoadBalancer", "startup_event", status="ready")
     yield

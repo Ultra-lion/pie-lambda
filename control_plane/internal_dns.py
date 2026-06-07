@@ -11,6 +11,8 @@ import asyncio
 from control_plane_db import ControlPlaneDB
 
 intercepted_domain = '.*lambda.*\.amazonaws\.com.*'
+background_tasks = set()
+
 
 
 
@@ -105,7 +107,9 @@ async def start_heartbeat(component_name):
 
 
 async def run_server(config:dict):
-    asyncio.create_task(start_heartbeat("DNS_SERVER"))
+    task = asyncio.create_task(start_heartbeat("DNS_SERVER"))
+    background_tasks.add(task)
+    task.add_done_callback(background_tasks.discard)
     resolver = HybridResolver(config)
     # Using ThreadingUDPServer allows the DNS server to handle multiple 
     # requests concurrently. Each request will run in its own thread, 

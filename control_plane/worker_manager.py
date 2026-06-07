@@ -70,7 +70,9 @@ class ScalerClient:
 
     async def poke_scaler(self, message="scale pls"):
         if not self.available or not self.writer:
-            asyncio.create_task(self.initialize())
+            task = asyncio.create_task(self.initialize())
+            background_tasks.add(task)
+            task.add_done_callback(background_tasks.discard)
             return
         
         log("LoadBalancer", "ScalerClient.poke_scaler", message=message)
@@ -82,7 +84,9 @@ class ScalerClient:
             log("LoadBalancer", "ScalerClient.poke_scaler", error=str(e))
             self.available=False
             self.writer = None
-            asyncio.create_task(self.initialize())
+            task = asyncio.create_task(self.initialize())
+            background_tasks.add(task)
+            task.add_done_callback(background_tasks.discard)
         
 
 async def start_heartbeat(component_name):
@@ -108,6 +112,7 @@ async def startup_event(app: FastAPI):
     control_plane_db = ControlPlaneDB()
 
     heartbeat_task = loop.create_task(start_heartbeat("WORKER_MANAGER"))
+    background_tasks.add(heartbeat_task)
     heartbeat_task.add_done_callback(background_tasks.discard)
 
     log("LoadBalancer", "startup_event", status="ready")
