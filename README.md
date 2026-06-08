@@ -181,12 +181,20 @@ Pie-Lambda automatically handles dependencies and environment variables for your
 > If you update your `requirements.txt` or `.env`, remember to run `python3 main.py rebuildlambdas` to apply the changes to your container images.
 
 
-#### 🛠️ Accessing Localhost Services
+#### 🛠️ Accessing Host Services
 If your application needs to talk back to a service running on your **host machine** (outside Docker), use the magic domain:
 - **Host:** `pie-lambda.local`
 - **Port:** Use the same port as your host service.
 
 The Control Plane's DNS automatically resolves `pie-lambda.local` to the host's bridge gateway.
+
+#### 🐳 Accessing Other Containerized Services
+If your target service is itself running in a **different container** on the `lambda_bridge` network:
+- **Host:** Use the **Container Name** (e.g., `my-mock-api`) or the **Container IP Address**.
+- **Requirement:** 
+    - **To be called BY a Lambda:** Just ensure the container is connected to the `lambda_bridge`. No special DNS or SSL setup is needed on the target container.
+    - **To CALL a Lambda (Transparently):** The container **must** follow the [Integration Steps](#-integrating-your-containers-transparent-dns) (DNS + SSL CA mount).
+- **Reason:** `127.0.0.1` inside a Lambda container resolves to the container itself, and `pie-lambda.local` resolves to the host OS, not other containers on the bridge.
 
 #### 🌐 External Traffic
 Don't worry about standard internet traffic; Pie-Lambda's DNS is recursive. Requests to `google.com` or other external domains are automatically forwarded to the outside internet.
